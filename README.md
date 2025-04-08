@@ -1,1 +1,1 @@
-# MLC-letter-string
+# MLC for letter-string analogies
