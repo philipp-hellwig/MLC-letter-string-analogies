@@ -8,6 +8,8 @@ from torch.utils.data import Dataset
 import pandas as pd
 import string
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 SOS_token = "SOS" # start of sentence
 EOS_token = "EOS" # end of sentence
 PAD_token = "PAD" # padding symbol
@@ -222,6 +224,15 @@ def bundle_ls_episode(x_support,y_support,x_query,y_query,alphabet):
     sample['yq'] = y_query
     sample['xq_context'] = x_query_context
     return sample
+
+
+def set_batch_to_device(batch):
+    # Make sure all padded tensors are on GPU if needed
+    tensors_to_gpu = [k for k in batch.keys() if '_padded' in k]
+    for k in tensors_to_gpu:
+        batch[k] = batch[k].to(device=DEVICE)
+    return batch
+
 
 if __name__ == "__main__":
     import string

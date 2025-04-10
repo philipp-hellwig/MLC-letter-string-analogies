@@ -163,11 +163,11 @@ def dataset_to_disk(
     dataset = dataset.sample(frac=1).reset_index(drop=True)
     rows = dataset.shape[0]
     file_id = 1
-    num_train_batches = round(train_ratio * (rows // batch_size))
+    num_train_samples = round(train_ratio * rows)
     print("Writing to .csv files...")
     for i in tqdm(range(0, rows, batch_size)):
         # set subdirectory:
-        if i <= num_train_batches:
+        if i <= num_train_samples:
             subdir= "train"
         else:
             subdir= "val"
@@ -178,5 +178,5 @@ def dataset_to_disk(
     print(f"Done.")
 
 if __name__ == "__main__":
-    dataset = generate_dataset()
+    dataset = generate_dataset(n_reshuffle=1)
     dataset_to_disk(dataset)    

@@ -120,7 +120,7 @@ class MLC(nn.Module):
 
         # create diagonal mask for autoregressive control
         tgt_mask = self.transformer.generate_square_subsequent_mask(maxlen_tgt) # maxlen_tgt x maxlen_tgt
-        tgt_mask = tgt_mask.to(device=DEVICE)
+        tgt_mask = tgt_mask.to(dtype=torch.bool, device=DEVICE)
         return tgt_embed, tgt_padding_mask, tgt_mask
 
     def forward(self, z_padded, batch):
@@ -168,3 +168,39 @@ class MLC(nn.Module):
                 tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_padding_mask, memory_key_padding_mask=memory_padding_mask)
         output = self.out(trans_out)
         return output
+    
+
+if __name__ == "__main__":
+    import datasets as dat
+    from datasets import Lang, LetterStringDataset
+    from evaluate import predict
+    import torch
+    from torch.utils.data import DataLoader
+
+    D_train = LetterStringDataset(data_dir="data", mode="train")
+    train_dataloader = DataLoader(D_train,batch_size=5,collate_fn=lambda x:dat.get_mlc_batch(x,D_train.langs),
+                                    shuffle=True)
+    sample_batch = next(iter(train_dataloader))
+    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    in_size = len(D_train.langs["input"].index2symbol)
+    out_size = len(D_train.langs["output"].index2symbol)
+    pad_in = D_train.langs["input"].PAD_idx
+    pad_out = D_train.langs["output"].PAD_idx
+
+    net = MLC(
+        hidden_size=128, 
+        input_size=in_size, 
+        output_size=out_size, 
+        PAD_idx_input=pad_in, 
+        PAD_idx_output=pad_out
+        )
+    net = net.to(device=DEVICE)
+
+    predictions = predict(
+    batch=sample_batch,
+    net=net, 
+    langs=D_train.langs,
+    max_length=20,
+    eval_type="sample"
+    )
