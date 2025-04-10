@@ -1,5 +1,6 @@
 import datasets as dat
 import torch
+from torch.utils.data import DataLoader
 from evaluate import predict, evaluate_ll
 from torch.utils.data import DataLoader
 from model import MLC, describe_model
@@ -125,7 +126,7 @@ if __name__ == "__main__":
     batch_size = 1
     epoch_start = 0
     nepochs = 1
-    model_path = "MLC_models/model.pt"
+    model_path = "models/model.pt"
 
 
     # get datasets and dataloader:
@@ -184,7 +185,6 @@ if __name__ == "__main__":
         for batch_idx, train_batch in enumerate(train_dataloader):
             train_batch = dat.set_batch_to_device(train_batch)
             dict_loss = train(train_batch, net, loss_fn, optimizer)
-            print(f"Batch {batch_idx}, Loss:{dict_loss['total']:.4f}")
             avg_train_loss += dict_loss['total']
             counter += 1
             step += 1  
