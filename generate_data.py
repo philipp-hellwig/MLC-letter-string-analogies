@@ -115,14 +115,14 @@ def generate_dataset(
 
         # permute alphabet:
         _, _, alphabet = k_derange(n_perm, list(string.ascii_lowercase))
-        alph_string = "".join(alphabet)
+        alph_string = " ".join(alphabet)
         
         for name in transformations.keys():
             queries = []
             for length in prob_lengths:
                 for i in range(len(alphabet)-length+1):
                     query = transformations[name](alphabet[i:i+length+1], alphabet)
-                    query = "".join(query[0]) + "->" + "".join(query[1])
+                    query = " ".join(query[0]) + " > " + " ".join(query[1])
                     queries.append(query)
                     n += 1
 
@@ -132,24 +132,39 @@ def generate_dataset(
                     {"n_perm" : [n_perm for _ in range(len(queries))],
                     "alphabet" : [alph_string for _ in range(len(queries))],
                     "transformation" : [name for _ in range(len(queries))],
-                    "query" : queries,
-                    "study" : np.random.permutation(queries)
+                    "study" : np.random.permutation(queries),
+                    "query" : queries
                     })
                 dataset = pd.concat([dataset, new_data], ignore_index=True)
     print(f"Generated {n} unique queries.")
     # drop rows where query is the same as study example:
     dataset = dataset.loc[dataset["query"] != dataset["study"], :]
     print(f"Resulting in {dataset.shape[0]} total samples.")
-    dataset.to_csv("data/all_samples.csv", index=False)
     return dataset
-
 
 def dataset_to_disk(
         dataset: pd.DataFrame, 
         directory="data", 
+        train_ratio: float=0.9
+        ) -> None:
+    
+    # shuffle dataset:
+    dataset = dataset.sample(frac=1).reset_index(drop=True)
+    rows = dataset.shape[0]
+    max_train_id = round(train_ratio * rows)
+    train = dataset.iloc[:max_train_id, :]
+    train.to_csv(f"{directory}/train.csv", index=False)
+    val = dataset.iloc[max_train_id:, :]
+    val.to_csv(f"{directory}/val.csv", index=False)
+    print(f"Done. {max_train_id} training samples and {rows - max_train_id} validation samples written to disk.")
+
+
+def dataset_to_disk_batched(
+        dataset: pd.DataFrame, 
+        directory="data", 
         batch_size: int=20, 
-        train_ratio: float=0.9, 
-        n_support: int=3) -> None:
+        train_ratio: float=0.9
+        ) -> None:
     
     """Write dataset to batched .csv files.
 
@@ -178,5 +193,5 @@ def dataset_to_disk(
     print(f"Done.")
 
 if __name__ == "__main__":
-    dataset = generate_dataset(n_reshuffle=1)
-    dataset_to_disk(dataset)    
+    dataset = generate_dataset(n_reshuffle=50)
+    dataset_to_disk(dataset)

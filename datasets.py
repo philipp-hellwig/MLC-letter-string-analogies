@@ -7,6 +7,7 @@ from copy import copy
 from torch.utils.data import Dataset
 import pandas as pd
 import string
+import numpy as np
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -69,9 +70,9 @@ class Lang:
             mylist.append(s)
         return mylist
 
-
 class LetterStringDataset(Dataset):
-    
+    # dataset version where data is loaded from one .csv rather than many
+
     def __init__(self, mode: str, data_dir: str):
         # Input
         # mode : 'train' or 'val' data
@@ -82,25 +83,34 @@ class LetterStringDataset(Dataset):
         self.mode = mode
         self.train = mode == 'train'
         self.randomize_order = True
-        self.dir_items = os.path.join(data_dir,self.mode)
-        self.list_items = glob.glob(self.dir_items+"/*.csv") # all episode files
-
         alphabet = list(string.ascii_lowercase)
         self.langs = {'input' : Lang(alphabet), 'output': Lang(alphabet)}
 
+        # load data:
+        self.data = pd.read_csv(f"{data_dir}/{mode}.csv")
+        
+        # preprocess data:
+        # split query into query xq and target yq
+        self.data[["xq","yq"]] = self.data["query"].str.split(">", expand=True)
+        self.data["xq"] = self.data["xq"].str.strip()
+        self.data["yq"] = self.data["yq"].str.strip().str.split(" ")
+        # create context:
+        sos = " " + self.langs["input"].index2symbol[self.langs["input"].SOS_idx] + " "
+        io = self.langs["input"].index2symbol[self.langs["input"].IN_OUT_idx]
+        self.data["xq_context"] = self.data["alphabet"] + sos + self.data["study"] + sos + self.data["xq"]
+        self.data["xq_context"] = self.data["xq_context"].str.replace(">", io)
+        self.data["xq_context"] = self.data["xq_context"].str.split(" ")
+
     def __len__(self):
-        if self.train:
-            return self.placeholder_length
-        else:
-            return len(self.list_items)
+        return self.data.shape[0]
 
     def __getitem__(self, idx: int=0):
+        # choose index randomly for training dataset:
         if self.train:
-            S = read_file(random.choice(self.list_items), self.randomize_order)
-        else:
-            S = read_file(self.list_items[idx]) # if we truly want to iterate over files
-        
-        return bundle_ls_episode(S['xs'],S['ys'],S['xq'],S['yq'], S['alphabet'])
+            idx = np.random.randint(low=0, high=len(self)) # random index for training
+        xq_context = self.data.loc[idx,"xq_context"]
+        yq = self.data.loc[idx,"yq"]
+        return {"xq_context": xq_context, "yq": yq}
 
     def pprint(self, sample):
         # Pretty print the episode
@@ -109,29 +119,16 @@ class LetterStringDataset(Dataset):
             print("".join(problem).replace("IO", " -> ").replace("SOS", "\n"), "-> ?", f"({"".join(solution)})")
 
 
-def read_file(fn_in: str, randomize_order: bool=False) -> dict:
-    """Read batch from csv file.
-    Args:
-        fn_in (str): Path to the csv file.
-        randomize_order (bool): Shuffle the order of samples or leave as is.
-    """
-    data = pd.read_csv(fn_in)
-    if randomize_order:
-        data = data.sample(frac=1).reset_index(drop=True)
-    
-    x_query, y_query = split_problems(data["query"])
-    x_study, y_study = split_problems(data["study"])
-    alphs = data["alphabet"].apply(lambda x: list(x))
-    return {'xs':x_study, 'ys':y_study, 'xq':x_query, 'yq':y_query, 'alphabet': alphs}
-
-
-def split_problems(problems):
-    xs, ys = [], []
-    for problem in problems:
-        x, y = problem.split("->")
-        xs.append(list(x))
-        ys.append(list(y))
-    return xs,ys
+def pad_seq(seq, max_length):
+    # Pad token string sequence with the PAD_token symbol to achieve max_length
+    #
+    # Input
+    #  seq : list of symbols (as strings)
+    #
+    # Output
+    #  seq : padded list now extended to length max_length
+    seq += (max_length - len(seq)) * [PAD_token]
+    return seq
 
 
 def build_padded_tensor(list_seq, lang, add_eos=True, add_sos=False):
@@ -161,69 +158,23 @@ def build_padded_tensor(list_seq, lang, add_eos=True, add_sos=False):
     return z_padded,z_lengths
 
 
-def pad_seq(seq, max_length):
-    # Pad token string sequence with the PAD_token symbol to achieve max_length
-    #
-    # Input
-    #  seq : list of symbols (as strings)
-    #
-    # Output
-    #  seq : padded list now extended to length max_length
-    seq += (max_length - len(seq)) * [PAD_token]
-    return seq
-
 def get_mlc_batch(samples, langs):
-    # Batch episodes into a series of padded input and target tensors
-    # 
-    # Input
-    #  samples : list of dicts from bundle_biml_episode
-    #  langs : input and output version of Lang class
-    assert isinstance(samples,list)
-    m = len(samples)
-    mybatch = {}
-    mybatch['list_samples'] = samples
-    mybatch['batch_size'] = m
-    mybatch['xq_context'] = [] # list of source sequences (as lists) across all episodes
-    mybatch['xq'] = []  # list of queries (as lists) across all episodes
-    mybatch['yq'] = [] # list of query outputs (as lists) across all episodes
-    mybatch['q_idx'] = [] # index of which episode each query belongs to
-    for idx in range(m): # each episode
-        sample = samples[idx]
-        nq = len(sample['xq'])
-        assert(nq == len(sample['yq']))
-        mybatch['xq_context'] += sample['xq_context']
-        mybatch['xq'] += sample['xq']
-        mybatch['yq'] += sample['yq']
-        mybatch['q_idx'] += [idx*torch.ones(nq, dtype=torch.int)]
-    mybatch['q_idx'] = torch.cat(mybatch['q_idx'], dim=0)
-    mybatch['xq_context_padded'],mybatch['xq_context_lengths'] = build_padded_tensor(mybatch['xq_context'], langs['input'])
-    mybatch['yq_padded'],mybatch['yq_lengths'] = build_padded_tensor(mybatch['yq'], langs['output'])
-    mybatch['yq_sos_padded'],mybatch['yq_sos_lengths'] = build_padded_tensor(mybatch['yq'],langs['output'],add_eos=False,add_sos=True)
-    return mybatch
-
-def bundle_ls_episode(x_support,y_support,x_query,y_query,alphabet):
-    # Bundle components for an episode suitable for optimizing BIML
-    # 
-    # Input
-    #  x_support [length ns list of lists] : input sequences (each a python list of words/symbols)
-    #  y_support [length ns list of lists] : output sequences (each a python list of words/symbols)
-    #  x_query [length nq list of lists] : input sequences (each a python list of words/symbols)
-    #  x_query [length nq list of lists] : output sequences (each a python list of words/symbols)
-    #  myhash : unique string identifier for this episode (should be order invariant for examples)
-    #  aux [dict] : any misc information that we want to pass along with the episode
-    #
-    # Output
-    #  sample : dict that stores episode information
-    ns = len(x_support)
-    x_query_context = [ [ITEM_SEP] + alphabet[j] + [ITEM_SEP] + x_support[j] + [IO_SEP] + y_support[j] + [ITEM_SEP] + x_query[j] for j in range(ns)] # Create the combined source sequence for every support example
-    sample = {}
-    sample['identifier'] = alphabet # unique identifying string for this episode (order invariant)
-    sample['xs'] = x_support # support 
-    sample['ys'] = y_support
-    sample['xq'] = x_query # query
-    sample['yq'] = y_query
-    sample['xq_context'] = x_query_context
-    return sample
+    # Combine individual samples into a batch
+    xq_contexts = [sample["xq_context"] for sample in samples]
+    yqs = [sample["yq"] for sample in samples]
+    xq_context_padded, xq_context_lengths = build_padded_tensor(xq_contexts, langs['input'])
+    yq_padded, yq_lengths = build_padded_tensor(yqs, langs['output'])
+    yq_sos_padded, yq_sos_lengths = build_padded_tensor(yqs, langs['output'], add_eos=False, add_sos=True)  
+    return {
+        "xq_context": xq_contexts,
+        "yq": yqs,
+        "xq_context_padded": xq_context_padded,
+        "xq_context_lengths": xq_context_lengths,
+        "yq_padded": yq_padded,
+        "yq_lengths": yq_lengths,
+        "yq_sos_padded": yq_sos_padded,
+        "yq_sos_lengths": yq_sos_lengths
+        }
 
 
 def set_batch_to_device(batch):
@@ -235,10 +186,127 @@ def set_batch_to_device(batch):
 
 
 if __name__ == "__main__":
-    import string
     from torch.utils.data import DataLoader
-    alphabet = list(string.ascii_lowercase)
-    D_train = LetterStringDataset(alphabet=alphabet, mydir="data", mode="train")
-    train_dataloader = DataLoader(D_train,batch_size=5,collate_fn=lambda x:get_mlc_batch(x,D_train.langs),
-                                        shuffle=True)
-    print(next(iter(train_dataloader)))
+    val_data = LetterStringDataset(data_dir="data", mode="val")
+    item = val_data.__getitem__(0)
+    print(item)
+    val_dataloader = DataLoader(val_data, batch_size=2)
+    batch = next(iter(val_dataloader))
+    print(batch)
+
+# old code:
+# class LetterStringDataset(Dataset):
+    
+#     def __init__(self, mode: str, data_dir: str):
+#         # Input
+#         # mode : 'train' or 'val' data
+#         # data_dir : directory where data is stored
+
+#         assert mode in ['train','val']        
+#         self.placeholder_length = 100_000 # placeholder number of episodes in epoch
+#         self.mode = mode
+#         self.train = mode == 'train'
+#         self.randomize_order = True
+#         self.dir_items = os.path.join(data_dir,self.mode)
+#         self.list_items = glob.glob(self.dir_items+"/*.csv") # all episode files
+
+#         alphabet = list(string.ascii_lowercase)
+#         self.langs = {'input' : Lang(alphabet), 'output': Lang(alphabet)}
+
+#     def __len__(self):
+#         if self.train:
+#             return self.placeholder_length
+#         else:
+#             return len(self.list_items)
+
+#     def __getitem__(self, idx: int=0):
+#         if self.train:
+#             S = read_file(random.choice(self.list_items), self.randomize_order)
+#         else:
+#             S = read_file(self.list_items[idx]) # if we truly want to iterate over files
+        
+#         return bundle_ls_episode(S['xs'],S['ys'],S['xq'],S['yq'], S['alphabet'])
+
+#     def pprint(self, sample):
+#         # Pretty print the episode
+#         print("\nProblems:")
+#         for problem, solution in zip(sample["xq_context"], sample["yq"]):
+#             print("".join(problem).replace("IO", " -> ").replace("SOS", "\n"), "-> ?", f"({"".join(solution)})")
+
+
+# def read_file(fn_in: str, randomize_order: bool=False) -> dict:
+#     """Read batch from csv file.
+#     Args:
+#         fn_in (str): Path to the csv file.
+#         randomize_order (bool): Shuffle the order of samples or leave as is.
+#     """
+#     data = pd.read_csv(fn_in)
+#     if randomize_order:
+#         data = data.sample(frac=1).reset_index(drop=True)
+    
+#     x_query, y_query = split_problems(data["query"])
+#     x_study, y_study = split_problems(data["study"])
+#     alphs = data["alphabet"].apply(lambda x: list(x))
+#     return {'xs':x_study, 'ys':y_study, 'xq':x_query, 'yq':y_query, 'alphabet': alphs}
+
+
+# def split_problems(problems):
+#     xs, ys = [], []
+#     for problem in problems:
+#         x, y = problem.split("->")
+#         xs.append(list(x))
+#         ys.append(list(y))
+#     return xs,ys
+
+# def get_mlc_batch(samples, langs):
+#     # Batch episodes into a series of padded input and target tensors
+#     # 
+#     # Input
+#     #  samples : list of dicts from bundle_biml_episode
+#     #  langs : input and output version of Lang class
+#     assert isinstance(samples,list)
+#     m = len(samples)
+#     mybatch = {}
+#     mybatch['list_samples'] = samples
+#     mybatch['batch_size'] = m
+#     mybatch['xq_context'] = [] # list of source sequences (as lists) across all episodes
+#     mybatch['xq'] = []  # list of queries (as lists) across all episodes
+#     mybatch['yq'] = [] # list of query outputs (as lists) across all episodes
+#     mybatch['q_idx'] = [] # index of which episode each query belongs to
+#     for idx in range(m): # each episode
+#         sample = samples[idx]
+#         #nq = len(sample['xq'])
+#         #assert(nq == len(sample['yq']))
+#         mybatch['xq_context'] += sample['xq_context']
+#         #mybatch['xq'] += sample['xq']
+#         mybatch['yq'] += sample['yq']
+#         #mybatch['q_idx'] += [idx*torch.ones(nq, dtype=torch.int)]
+#     #mybatch['q_idx'] = torch.cat(mybatch['q_idx'], dim=0)
+#     mybatch['xq_context_padded'], mybatch['xq_context_lengths'] = build_padded_tensor(mybatch['xq_context'], langs['input'])
+#     mybatch['yq_padded'], mybatch['yq_lengths'] = build_padded_tensor(mybatch['yq'], langs['output'])
+#     mybatch['yq_sos_padded'], mybatch['yq_sos_lengths'] = build_padded_tensor(mybatch['yq'],langs['output'],add_eos=False,add_sos=True)
+#     return mybatch
+
+# def bundle_ls_episode(x_support,y_support,x_query,y_query,alphabet):
+#     # Bundle components for an episode suitable for optimizing BIML
+#     # 
+#     # Input
+#     #  x_support [length ns list of lists] : input sequences (each a python list of words/symbols)
+#     #  y_support [length ns list of lists] : output sequences (each a python list of words/symbols)
+#     #  x_query [length nq list of lists] : input sequences (each a python list of words/symbols)
+#     #  x_query [length nq list of lists] : output sequences (each a python list of words/symbols)
+#     #  myhash : unique string identifier for this episode (should be order invariant for examples)
+#     #  aux [dict] : any misc information that we want to pass along with the episode
+#     #
+#     # Output
+#     #  sample : dict that stores episode information
+#     ns = len(x_support)
+#     x_query_context = [ [ITEM_SEP] + alphabet[j] + [ITEM_SEP] + x_support[j] + [IO_SEP] + y_support[j] + [ITEM_SEP] + x_query[j] for j in range(ns)] # Create the combined source sequence for every support example
+#     sample = {}
+#     sample['identifier'] = alphabet # unique identifying string for this episode (order invariant)
+#     sample['xs'] = x_support # support 
+#     sample['ys'] = y_support
+#     sample['xq'] = x_query # query
+#     sample['yq'] = y_query
+#     sample['xq_context'] = x_query_context
+#     return sample

@@ -97,7 +97,7 @@ def load_checkpoint(fn_out_model, net, optimizer, scheduler_epoch, params):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--fn_out_model', type=str, default='', help='*REQUIRED* Filename for saving model checkpoints. Typically ends in .pt')
-    parser.add_argument('--dir_model', type=str, default='out_models', help='Directory for saving model files')
+    parser.add_argument('--dir_model', type=str, default='models', help='Directory for saving model files')
     parser.add_argument('--query_from_supp', default=False, help='Whether or not to sample queries from the support examples shown to the model.')
     parser.add_argument('--batch_size', type=int, default=25, help='number of episodes per batch')
     parser.add_argument('--nepochs', type=int, default=50, help='number of training epochs')
@@ -116,26 +116,51 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     # set hyperparameters:
-    emb_size = 64
-    nlayers_encoder = 3
-    nlayers_decoder = 3
-    p_dropout = 0.1
-    lr = 0.001
-    lr_end_factor=0.05
-    lr_warmup = False
-    batch_size = 1
-    epoch_start = 0
-    nepochs = 1
-    model_path = "models/model.pt"
+    fn_out_model = args.fn_out_model
+    dir_model = args.dir_model
+    query_from_supp = args.query_from_supp
+    batch_size = args.batch_size
+    nepochs = args.nepochs
+    adamW_learning_rate = args.lr
+    lr_end_factor = args.lr_end_factor
+    lr_warmup = not args.no_lr_warmup
+    nlayers_encoder = args.nlayers_encoder
+    nlayers_decoder = args.nlayers_decoder
+    emb_size = args.emb_size
+    ff_mult = args.ff_mult
+    p_dropout = args.dropout        
+    myact = args.act
+    bool_save_best = args.save_best
+    save_best_skip = args.save_best_skip
+    bool_resume = args.resume
+
+    # emb_size = 64
+    # nlayers_encoder = 3
+    # nlayers_decoder = 3
+    # p_dropout = 0.1
+    # lr = 0.001
+    # lr_end_factor=0.05
+    # lr_warmup = False
+    # batch_size = 1
+    # epoch_start = 0
+    # nepochs = 1
+    model_path = f"{dir_model}/{fn_out_model}"
 
 
-    # get datasets and dataloader:
+    # initialize datasets and dataloaders:
     D_train = dat.LetterStringDataset(data_dir="data", mode="train")
-    train_dataloader = DataLoader(D_train,batch_size=5,collate_fn=lambda x:dat.get_mlc_batch(x,D_train.langs),
-                                    shuffle=True)
+    train_dataloader = DataLoader(
+        D_train,
+        batch_size=args.batch_size,
+        collate_fn=lambda x:dat.get_mlc_batch(x,D_train.langs),
+        shuffle=True)
+    
     D_val = dat.LetterStringDataset(data_dir="data", mode="val")
-    val_dataloader = DataLoader(D_val,batch_size=5,collate_fn=lambda x:dat.get_mlc_batch(x,D_train.langs),
-                                    shuffle=True)
+    val_dataloader = DataLoader(
+        D_val,
+        batch_size=args.batch_size,
+        collate_fn=lambda x:dat.get_mlc_batch(x,D_val.langs),
+        shuffle=True)
 
     
     input_size = D_train.langs['input'].n_symbols, 
@@ -169,6 +194,7 @@ if __name__ == "__main__":
         print('    with LR warmup OFF')
         scheduler_epoch = optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=lr_end_factor, total_iters=nepochs-1, verbose=False)
 
+
     nsteps_estimate = math.ceil(nepochs*len(D_train)/batch_size)
     avg_train_loss = 0.
     best_val_loss = float('inf')
@@ -178,6 +204,8 @@ if __name__ == "__main__":
     val_accs = []
     epoch_start = 1
     start = time.time()
+    
+    print(f"Training on {DEVICE}.")
     # training loop:
     for epoch in range(epoch_start,nepochs+1):
         print("Epoch",epoch,"\n-------------------------------")
