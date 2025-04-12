@@ -4,26 +4,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import math
 import datasets as dat
+from evaluate import predict
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-def describe_model(net):
-    nparams = sum(p.numel() for p in net.parameters() if p.requires_grad)
-    if type(net) is MLC:
-        print('\nMLC specs:')
-        print(' nparams=',nparams)
-        print(' nlayers_encoder=',net.nlayers_encoder)
-        print(' nlayers_decoder=',net.nlayers_decoder)
-        print(' nhead=',net.nhead)
-        print(' hidden_size=',net.hidden_size)
-        print(' dim_feedforward=',net.dim_feedforward)
-        print(' act_feedforward=',net.act)
-        print(' dropout=',net.dropout_p)
-        print(' ')
-        print('')
-    else:
-        print('Network type ' + str(type(net)) + ' not found...')
 
 class PositionalEncoding(nn.Module):
     #
@@ -65,7 +48,7 @@ class MLC(nn.Module):
         #  dropout_p : dropout applied to symbol embeddings and transformer layers
         #  ff_mult : multiplier for hidden size of feedforward network
         #  activation: string either 'gelu' or 'relu'
-        #   
+          
         super(MLC, self).__init__()
         assert activation in ['gelu','relu']        
         self.hidden_size = hidden_size
@@ -84,7 +67,9 @@ class MLC(nn.Module):
         self.positional_encoding = PositionalEncoding(emb_size=hidden_size, dropout=dropout_p)
         self.input_embedding = nn.Embedding(input_size, hidden_size)
         self.output_embedding = nn.Embedding(output_size, hidden_size)
-        self.out = nn.Linear(hidden_size,output_size)
+        self.out = nn.Linear(hidden_size, output_size)
+
+        self.nparams = sum(p.numel() for p in self.parameters() if p.requires_grad)
 
     def prep_encode(self, xq_context_padded):
         # Embed source sequences and make masks
@@ -169,16 +154,72 @@ class MLC(nn.Module):
                 tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_padding_mask, memory_key_padding_mask=memory_padding_mask)
         output = self.out(trans_out)
         return output
+
+    def __str__(self):
+        return "\n\t".join([
+            "MLC specs:",
+            f"{self.nparams:,} parameters",
+            f"{self.nlayers_encoder} encoder layers",
+            f"{self.nlayers_decoder} decoder layers",
+            f"{self.nhead} attention heads",
+            f"{self.hidden_size} embedding size",
+            f"{self.dim_feedforward} feedforward layer sizes",
+            f"{self.act} activation function",
+            f"p={self.dropout_p} dropout",
+        ])
+
+
+def load_model(path: str):
+    """Load MLC model using a checkpoint file (.pt).
+
+    Args:
+        path (str): path to the .pt file.
+
+    Returns:
+        tuple: (langs, train_dataloader, val_dataloader, net: MLC)
+    """
+    checkpoint = torch.load(path, map_location=DEVICE)
+    #episode_type = checkpoint['episode_type']
+    batch_size = checkpoint['batch_size']
+    nets_state_dict = checkpoint['nets_state_dict']
+    if list(nets_state_dict.keys())==['net']: nets_state_dict = nets_state_dict['net'] # for compatibility with legacy code
+    input_size = checkpoint['langs']['input'].n_symbols
+    output_size = checkpoint['langs']['output'].n_symbols
+    emb_size = checkpoint['emb_size']
+    dropout_p = checkpoint['dropout']
+    myact = checkpoint['activation']
+    nlayers_encoder = checkpoint['nlayers_encoder']
+    nlayers_decoder = checkpoint['nlayers_decoder']
+    best_val_loss = -float('inf')
+    if 'best_val_loss' in checkpoint: best_val_loss = checkpoint['best_val_loss']
+
+    print(' Loading model that has completed (or started) ' + str(checkpoint['epoch']) + ' of ' + str(checkpoint['nepochs']) + ' epochs')
+    print('  batch size:',checkpoint['batch_size'])
+    print('  number of steps:', checkpoint['step'])
+    print('  best val loss achieved: {:.4f}'.format(best_val_loss))
+
+    # Load validation dataset
+    D_train = dat.LetterStringDataset(data_dir="data", mode="train")
+    D_val = dat.LetterStringDataset(data_dir="data", mode="val")
+    langs = D_val.langs
+    train_dataloader = DataLoader(D_train,batch_size=batch_size,
+                                collate_fn=lambda x:dat.get_mlc_batch(x,langs),shuffle=False)
+    val_dataloader = DataLoader(D_val,batch_size=batch_size,
+                                    collate_fn=lambda x:dat.get_mlc_batch(x,langs),shuffle=False)
+
+    # Load model parameters         
+    net = MLC(emb_size, input_size, output_size,
+        langs['input'].PAD_idx, langs['output'].PAD_idx,
+        nlayers_encoder=nlayers_encoder, nlayers_decoder=nlayers_decoder, 
+        dropout_p=dropout_p, activation=myact)        
+    net.load_state_dict(nets_state_dict)
+    net = net.to(device=DEVICE)
+    print(net)
+    return (langs, train_dataloader, val_dataloader, net)
     
 
 if __name__ == "__main__":
-    import datasets as dat
-    from datasets import Lang, LetterStringDataset
-    from evaluate import predict
-    import torch
-    from torch.utils.data import DataLoader
-
-    D_train = LetterStringDataset(data_dir="data", mode="train")
+    D_train = dat.LetterStringDataset(data_dir="data", mode="train")
     train_dataloader = DataLoader(D_train,batch_size=5,collate_fn=lambda x:dat.get_mlc_batch(x,D_train.langs),
                                     shuffle=True)
     sample_batch = next(iter(train_dataloader))
@@ -205,55 +246,3 @@ if __name__ == "__main__":
     max_length=20,
     eval_type="sample"
     )
-
-def load_model(path:str):
-    """Load MLC model using a checkpoint file (.pt).
-
-    Args:
-        path (str): path to the .pt file.
-
-    Returns:
-        tuple: (langs, train_dataloader, val_dataloader, net: MLC)
-    """
-    checkpoint = torch.load(path, map_location=DEVICE)
-    #episode_type = checkpoint['episode_type']
-    batch_size = checkpoint['batch_size']
-    nets_state_dict = checkpoint['nets_state_dict']
-    if list(nets_state_dict.keys())==['net']: nets_state_dict = nets_state_dict['net'] # for compatibility with legacy code
-    input_size = checkpoint['langs']['input'].n_symbols
-    output_size = checkpoint['langs']['output'].n_symbols
-    emb_size = checkpoint['emb_size']
-    dropout_p = checkpoint['dropout']
-    myact = checkpoint['activation']
-    nlayers_encoder = checkpoint['nlayers_encoder']
-    nlayers_decoder = checkpoint['nlayers_decoder']
-    train_tracker = checkpoint['train_tracker']
-    best_val_loss = -float('inf')
-    if 'best_val_loss' in checkpoint: best_val_loss = checkpoint['best_val_loss']
-
-    print(' Loading model that has completed (or started) ' + str(checkpoint['epoch']) + ' of ' + str(checkpoint['nepochs']) + ' epochs')
-    print('  batch size:',checkpoint['batch_size'])
-    print('  number of steps:', checkpoint['step'])
-    print('  best val loss achieved: {:.4f}'.format(best_val_loss))
-
-    # Load validation dataset
-    D_train = dat.LetterStringDataset(data_dir="data", mode="train")
-    D_val = dat.LetterStringDataset(data_dir="data", mode="val")
-    langs = D_val.langs
-    train_dataloader = DataLoader(D_train,batch_size=batch_size,
-                                collate_fn=lambda x:dat.get_mlc_batch(x,langs),shuffle=False)
-    val_dataloader = DataLoader(D_val,batch_size=batch_size,
-                                    collate_fn=lambda x:dat.get_mlc_batch(x,langs),shuffle=False)
-
-    # For backward compatibility with legacy code that used same EOS and PAD tokens
-    add_pad = dat.PAD_token not in checkpoint['langs']['input'].symbol2index
-
-    # Load model parameters         
-    net = MLC(emb_size, input_size, output_size,
-        langs['input'].PAD_idx, langs['output'].PAD_idx,
-        nlayers_encoder=nlayers_encoder, nlayers_decoder=nlayers_decoder, 
-        dropout_p=dropout_p, activation=myact)        
-    net.load_state_dict(nets_state_dict)
-    net = net.to(device=DEVICE)
-    describe_model(net)
-    return (langs, train_dataloader, val_dataloader, net)
