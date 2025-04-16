@@ -1,14 +1,15 @@
-import datasets as dat
-from evaluate import evaluate_ll
-from model import MLC
-from train_lib import timeSince
+
+import time
+import argparse
+import math
 
 import torch
 from torch.utils.data import DataLoader
 
-import math
-import time
-import argparse
+import datasets as dat
+from evaluate import evaluate_ll
+from model import MLC
+from train_lib import timeSince
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -66,7 +67,7 @@ def save_checkpoint(fn_out_model, step, epoch, net, optimizer, scheduler_epoch, 
     print(' < Done. >')
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filename_model', type=str, default='', help='*REQUIRED* Filename for saving model checkpoints. Typically ends in .pt')
     parser.add_argument('--dir_model', type=str, default='models', help='Directory for saving model files')
@@ -90,22 +91,12 @@ if __name__ == "__main__":
 
     # initialize datasets and dataloaders:
     D_train = dat.LetterStringDataset(data_dir="data", mode="train")
-    train_dataloader = DataLoader(
-        D_train,
-        batch_size=args.batch_size,
-        collate_fn=lambda x:dat.get_mlc_batch(x,D_train.langs),
-        shuffle=True)
+    train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
     
     D_val = dat.LetterStringDataset(data_dir="data", mode="val")
-    val_dataloader = DataLoader(
-        D_val,
-        batch_size=args.batch_size,
-        collate_fn=lambda x:dat.get_mlc_batch(x,D_val.langs),
-        shuffle=True)
+    val_dataloader = DataLoader(D_val, batch_size=args.batch_size, collate_fn=D_val.collate_fn, shuffle=True)
 
     # setup model:
-    input_size = D_train.langs['input'].n_symbols, 
-    output_size = D_train.langs['output'].n_symbols,
     net = MLC(
         hidden_size=args.emb_size, 
         input_size=D_train.langs['input'].n_symbols, 
@@ -122,7 +113,7 @@ if __name__ == "__main__":
     print(net)
 
     # group args in dict for when model is saved:
-    params_state = {'langs': D_train.langs, 'emb_size':args.emb_size, 'input_size':input_size, 'output_size':output_size,
+    params_state = {'langs': D_train.langs, 'emb_size':args.emb_size, 'input_size':D_train.langs['input'].n_symbols, 'output_size':D_train.langs['output'].n_symbols,
                     'dropout':args.dropout, 'nlayers_encoder':args.nlayers_encoder, 'nlayers_decoder':args.nlayers_decoder,
                     'nepochs':args.nepochs, 'batch_size':args.batch_size, 'activation':"gelu", 'args':args}
     
@@ -145,7 +136,6 @@ if __name__ == "__main__":
     counter = 0 # num updates since the loss was last reported
     step = 0
     train_tracker = []
-    val_accs = []
     epoch_start = 1
     start = time.time()
     
@@ -183,10 +173,17 @@ if __name__ == "__main__":
                     save_checkpoint(model_save_path,step,epoch,net,optimizer,scheduler_epoch,train_tracker,best_val_loss,params_state,is_best=True)
 
             # if warm-up, adjust learning rate for each step of the first epoch
-            if args.no_lr_warmup and epoch==1: scheduler_warmup.step()
+            if args.no_lr_warmup and epoch==1: 
+                scheduler_warmup.step()
         
         # after each epoch, adjust the general learning rate
-        if epoch>1 or not args.no_lr_warmup: scheduler_epoch.step()
+        if epoch>1 or not args.no_lr_warmup: 
+            scheduler_epoch.step()
         save_checkpoint(model_save_path,step,epoch,net,optimizer,scheduler_epoch,train_tracker,best_val_loss,params_state)
 
     print('Training complete.')
+
+
+if __name__ == "__main__":
+    main()
+    

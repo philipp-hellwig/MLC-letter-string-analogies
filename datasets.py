@@ -1,12 +1,10 @@
 
-import os
-import torch
-import random
-import glob
+import string
 from copy import copy
+
+import torch
 from torch.utils.data import Dataset
 import pandas as pd
-import string
 import numpy as np
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -16,6 +14,7 @@ EOS_token = "EOS" # end of sentence
 PAD_token = "PAD" # padding symbol
 IO_SEP = 'IO' # separator '->' between input/outputs in support examples
 ITEM_SEP  = SOS_token # separator '|' between support examples in input sequence
+
 
 class Lang:
     def __init__(self, alphabet: list, in_out="IO"):
@@ -70,7 +69,7 @@ class Lang:
         return mylist
 
 class LetterStringDataset(Dataset):
-    # dataset version where data is loaded from one .csv rather than many
+    # dataset version where data is loaded from one large .csv file rather than many small .csv files
 
     def __init__(self, mode: str, data_dir: str):
         # Input
@@ -117,6 +116,8 @@ class LetterStringDataset(Dataset):
         for problem, solution in zip(sample["xq_context"], sample["yq"]):
             print("".join(problem).replace("IO", " -> ").replace("SOS", "\n"), "-> ?", f"({"".join(solution)})")
 
+    def collate_fn(self, batch):
+        return get_mlc_batch(batch, self.langs)
 
 def pad_seq(seq, max_length):
     # Pad token string sequence with the PAD_token symbol to achieve max_length

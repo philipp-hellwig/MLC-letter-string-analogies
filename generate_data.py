@@ -1,10 +1,11 @@
+from copy import deepcopy
+import string
+import random
+
 import numpy as np
 import pandas as pd
-import string
-from copy import deepcopy
-import random
-from itertools import chain
 from tqdm import tqdm
+
 
 # Generate derangement
 def k_derange(k, letters):
@@ -191,6 +192,7 @@ def dataset_to_disk_batched(
         file_id += 1
     
     print(f"Done.")
+
 
 if __name__ == "__main__":
     dataset = generate_dataset(n_reshuffle=50)

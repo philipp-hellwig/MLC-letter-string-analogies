@@ -1,9 +1,11 @@
 import torch
 from torch.distributions import Categorical
-import datasets as dat
 import torch.nn.functional as F
 
+import datasets as dat
+
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 def predict(batch, net, langs, max_length, eval_type='max', out_mask_allow=[]):
     # Predicts outputs for problem batch until max_length is reached or EOS is found.
@@ -84,6 +86,7 @@ def evaluate_ll(val_dataloader, net, langs, loss_fn=[], p_lapse=0.0, verbose=Fal
         total_ll += dict_loss['ll']
         total_N += dict_loss['N']
     return total_ll, total_N
+
 
 def batch_ll(batch, net, loss_fn, langs, p_lapse=0.0):
     # Evaluate log-likelihood (average over cells, and sum total) for a given batch

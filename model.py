@@ -3,10 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import math
+
 import datasets as dat
 from evaluate import predict
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 class PositionalEncoding(nn.Module):
     #
@@ -27,6 +29,7 @@ class PositionalEncoding(nn.Module):
         #  Input
         #    token_embedding: [seq_len, batch_size, embedding_dim] list of embedded tokens
         return self.dropout(token_embedding + self.pos_embedding[:token_embedding.size(0), :])
+
 
 class MLC(nn.Module):
     #
@@ -219,11 +222,11 @@ def load_model(path: str):
     
 
 if __name__ == "__main__":
+    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     D_train = dat.LetterStringDataset(data_dir="data", mode="train")
     train_dataloader = DataLoader(D_train,batch_size=5,collate_fn=lambda x:dat.get_mlc_batch(x,D_train.langs),
                                     shuffle=True)
     sample_batch = next(iter(train_dataloader))
-    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     in_size = len(D_train.langs["input"].index2symbol)
     out_size = len(D_train.langs["output"].index2symbol)

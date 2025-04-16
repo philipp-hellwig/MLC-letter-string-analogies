@@ -1,6 +1,7 @@
 import time
 import math
 
+
 def asMinutes(s): 
     # convert seconds to minutes
     m = math.floor(s / 60)
