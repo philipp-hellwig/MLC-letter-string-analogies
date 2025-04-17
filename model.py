@@ -172,55 +172,6 @@ class MLC(nn.Module):
         ])
 
 
-def load_model(path: str):
-    """Load MLC model using a checkpoint file (.pt).
-
-    Args:
-        path (str): path to the .pt file.
-
-    Returns:
-        tuple: (langs, train_dataloader, val_dataloader, net: MLC)
-    """
-    checkpoint = torch.load(path, map_location=DEVICE)
-    #episode_type = checkpoint['episode_type']
-    batch_size = checkpoint['batch_size']
-    nets_state_dict = checkpoint['nets_state_dict']
-    if list(nets_state_dict.keys())==['net']: nets_state_dict = nets_state_dict['net'] # for compatibility with legacy code
-    input_size = checkpoint['langs']['input'].n_symbols
-    output_size = checkpoint['langs']['output'].n_symbols
-    emb_size = checkpoint['emb_size']
-    dropout_p = checkpoint['dropout']
-    myact = checkpoint['activation']
-    nlayers_encoder = checkpoint['nlayers_encoder']
-    nlayers_decoder = checkpoint['nlayers_decoder']
-    best_val_loss = -float('inf')
-    if 'best_val_loss' in checkpoint: best_val_loss = checkpoint['best_val_loss']
-
-    print(' Loading model that has completed (or started) ' + str(checkpoint['epoch']) + ' of ' + str(checkpoint['nepochs']) + ' epochs')
-    print('  batch size:',checkpoint['batch_size'])
-    print('  number of steps:', checkpoint['step'])
-    print('  best val loss achieved: {:.4f}'.format(best_val_loss))
-
-    # Load validation dataset
-    D_train = dat.LetterStringDataset(data_dir="data", mode="train")
-    D_val = dat.LetterStringDataset(data_dir="data", mode="val")
-    langs = D_val.langs
-    train_dataloader = DataLoader(D_train,batch_size=batch_size,
-                                collate_fn=lambda x:dat.get_mlc_batch(x,langs),shuffle=False)
-    val_dataloader = DataLoader(D_val,batch_size=batch_size,
-                                    collate_fn=lambda x:dat.get_mlc_batch(x,langs),shuffle=False)
-
-    # Load model parameters         
-    net = MLC(emb_size, input_size, output_size,
-        langs['input'].PAD_idx, langs['output'].PAD_idx,
-        nlayers_encoder=nlayers_encoder, nlayers_decoder=nlayers_decoder, 
-        dropout_p=dropout_p, activation=myact)        
-    net.load_state_dict(nets_state_dict)
-    net = net.to(device=DEVICE)
-    print(net)
-    return (langs, train_dataloader, val_dataloader, net)
-    
-
 if __name__ == "__main__":
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     D_train = dat.LetterStringDataset(data_dir="data", mode="train")
