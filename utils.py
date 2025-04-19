@@ -65,14 +65,42 @@ class CheckPoint:
         
         return net
     
-    def load_dataloaders(self):
+    def load_dataloaders(self, data_dir="data"):            
         # Load validation dataset
-        D_train = dat.LetterStringDataset(data_dir="data", mode="train")
-        D_val = dat.LetterStringDataset(data_dir="data", mode="val")
+        D_train = dat.LetterStringDataset(data_dir=data_dir, mode="train")
+        D_val = dat.LetterStringDataset(data_dir=data_dir, mode="val")
         langs = D_val.langs
         train_dataloader = DataLoader(D_train,batch_size=self.checkpoint["batch_size"],
-                                    collate_fn=lambda x:dat.get_mlc_batch(x,langs),shuffle=False)
+                                    collate_fn=lambda x:dat.get_ls_batch(x,langs),shuffle=False)
         val_dataloader = DataLoader(D_val,batch_size=self.checkpoint["batch_size"],
-                                        collate_fn=lambda x:dat.get_mlc_batch(x,langs),shuffle=False)
+                                        collate_fn=lambda x:dat.get_ls_batch(x,langs),shuffle=False)
         
         return (train_dataloader, val_dataloader)
+
+
+def save_checkpoint(fn_out_model, step, epoch, net, optimizer, scheduler_epoch, train_tracker, val_accuracies, best_val_loss, params, is_best=False):
+    # Input
+    #  fn_out_model : filename for saving the model
+    #  step : number of gradient steps
+    # ..
+    #  train_tracker : array that stores losses over training
+    #  best_val_loss : best validation loss so far (if using --save_best)
+    #  params : list of hyperpameters
+    #  is_best : special filename if best file so far  ... 'filename_best.pt'
+    if is_best:
+        s = fn_out_model.rsplit('.',1) # split off extension 
+        fn_out_model = s[0] + '_best.' + s[1]
+        print('> Saving new *best* model as',fn_out_model, end='')
+    else:
+        print('> Saving model as',fn_out_model, end='')
+    state = {'step' : step,
+             'epoch' : epoch,
+             'nets_state_dict' : net.state_dict(),
+             'optimizer_state_dict' : optimizer.state_dict(),
+             'scheduler_epoch_state_dict' : scheduler_epoch.state_dict(),
+             'train_tracker' : train_tracker,
+             'val_accuracy' : val_accuracies,
+             'best_val_loss' : best_val_loss}
+    state.update(params)
+    torch.save(state, fn_out_model)
+    print(' < Done. >')

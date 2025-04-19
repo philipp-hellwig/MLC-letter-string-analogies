@@ -5,7 +5,6 @@ from copy import copy
 import torch
 from torch.utils.data import Dataset
 import pandas as pd
-import numpy as np
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -99,16 +98,21 @@ class LetterStringDataset(Dataset):
         self.data["xq_context"] = self.data["xq_context"].str.replace(">", io)
         self.data["xq_context"] = self.data["xq_context"].str.split(" ")
 
+        # convert to a list of dicts for faster processing
+        self.samples = []
+        for _, row in self.data.iterrows():
+            self.samples.append({
+                "xq_context": row["xq_context"],
+                "yq": row["yq"],
+                "transformation": row["transformation"],
+                "n_perm": row["n_perm"]
+            })
+
     def __len__(self):
-        return self.data.shape[0]
+        return len(self.samples)
 
     def __getitem__(self, idx: int=0):
-        # choose index randomly for training dataset:
-        if self.train:
-            idx = np.random.randint(low=0, high=len(self)) # random index for training
-        xq_context = self.data.loc[idx,"xq_context"]
-        yq = self.data.loc[idx,"yq"]
-        return {"xq_context": xq_context, "yq": yq}
+        return self.samples[idx]
 
     def pprint(self, sample):
         # Pretty print the episode
@@ -117,7 +121,7 @@ class LetterStringDataset(Dataset):
             print("".join(problem).replace("IO", " -> ").replace("SOS", "\n"), "-> ?", f"({"".join(solution)})")
 
     def collate_fn(self, batch):
-        return get_mlc_batch(batch, self.langs)
+        return get_ls_batch(batch, self.langs)
 
 def pad_seq(seq, max_length):
     # Pad token string sequence with the PAD_token symbol to achieve max_length
@@ -158,13 +162,15 @@ def build_padded_tensor(list_seq, lang, add_eos=True, add_sos=False):
     return z_padded, z_lengths
 
 
-def get_mlc_batch(samples, langs):
+def get_ls_batch(samples, langs):
     # Combine individual samples into a batch
     xq_contexts = [sample["xq_context"] for sample in samples]
     yqs = [sample["yq"] for sample in samples]
     xq_context_padded, xq_context_lengths = build_padded_tensor(xq_contexts, langs['input'])
     yq_padded, yq_lengths = build_padded_tensor(yqs, langs['output'])
     yq_sos_padded, yq_sos_lengths = build_padded_tensor(yqs, langs['output'], add_eos=False, add_sos=True)  
+    transformations = [sample["transformation"] for sample in samples]
+    n_perms = [sample["n_perm"] for sample in samples]
     return {
         "xq_context": xq_contexts,
         "yq": yqs,
@@ -173,7 +179,9 @@ def get_mlc_batch(samples, langs):
         "yq_padded": yq_padded,
         "yq_lengths": yq_lengths,
         "yq_sos_padded": yq_sos_padded,
-        "yq_sos_lengths": yq_sos_lengths
+        "yq_sos_lengths": yq_sos_lengths,
+        "transformation": transformations,
+        "n_perm": n_perms
         }
 
 
@@ -181,15 +189,15 @@ def set_batch_to_device(batch):
     # Make sure all padded tensors are on GPU if needed
     tensors_to_gpu = [k for k in batch.keys() if '_padded' in k]
     for k in tensors_to_gpu:
-        batch[k] = batch[k].to(device=DEVICE)
+        batch[k] = batch[k].to(device=DEVICE, non_blocking=True)
     return batch
 
 
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
-    val_data = LetterStringDataset(data_dir="data", mode="val")
-    item = val_data.__getitem__(0)
+    D_val = LetterStringDataset(data_dir="data", mode="val")
+    item = D_val.__getitem__(0)
     print(item)
-    val_dataloader = DataLoader(val_data, batch_size=2)
+    val_dataloader = DataLoader(D_val, batch_size=25, collate_fn=D_val.collate_fn, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
     batch = next(iter(val_dataloader))
     print(batch)

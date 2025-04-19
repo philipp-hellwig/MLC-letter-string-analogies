@@ -1,6 +1,10 @@
 import torch
 from torch.distributions import Categorical
 import torch.nn.functional as F
+import numpy as np
+import torch.utils
+import torch.utils.data
+from tqdm import tqdm
 
 import datasets as dat
 
@@ -68,7 +72,7 @@ def predict(batch, net, langs, max_length, eval_type='max', out_mask_allow=[]):
     return yq_predict
 
 
-def evaluate_ll(val_dataloader, net, langs, loss_fn=[], p_lapse=0.0, verbose=False):
+def evaluate_ll(val_dataloader, net, langs, loss_fn=[], p_lapse=0.0):
     # Evaluate the total (sum) log-likelihood across the entire validation set
     # 
     # Input
@@ -96,7 +100,6 @@ def batch_ll(batch, net, loss_fn, langs, p_lapse=0.0):
     #   loss_fn : loss function
     #   langs : dict of dat.Lang classes
     net.eval()
-    m = len(batch['yq']) # b*nq
     target_batches = batch['yq_padded'] # b*nq x max_length
     target_lengths = batch['yq_lengths'] # list of size b*nq
     target_shift = batch['yq_sos_padded'] # b*nq x max_length
@@ -115,6 +118,31 @@ def batch_ll(batch, net, loss_fn, langs, p_lapse=0.0):
     dict_loss['ll'] = dict_loss['ll_by_cell'] * dict_loss['N'] # total LL
     return dict_loss
 
+
+def evaluate_predictions(dataloader: torch.utils.data.DataLoader, net, max_length: int, eval_type='max') -> tuple:
+    """Evaluates whether model predictions exactly match the solutions across entire data set.
+
+    Args:
+        dataloader (torch.DataLoader): dataloader build from datasets.LetterStringDataset
+        net (model.MLC): MLC model
+        max_length (int): maximum output length for each problem
+        eval_type (str, optional): "max": take the maximum token of the logits, "sample" sample from the logit distribution. Defaults to 'max'.
+
+    Returns:
+        tuple: A tuple of a lists of scores (True/False) and transformation types (successor, sort, etc.) for each problem.
+    """
+    
+    net.eval()
+    scores = []
+    transformation_types = []
+    for batch in tqdm(dataloader): # each batch
+        batch = dat.set_batch_to_device(batch)
+        predictions = predict(batch, net, dataloader.dataset.langs, max_length, eval_type=eval_type)
+        batch_scores = [pred==yq for pred, yq in zip(predictions, batch["yq"])]
+        scores += batch_scores
+        transformation_types += batch["transformation"]
+
+    return (np.array(scores), np.array(transformation_types))
 
 def smooth_decoder_outputs(logits_flat,p_lapse,lapse_symb_include,langs):
     # Mix decoder outputs (logits_flat) with uniform distribution over allowed emissions (in lapse_symb_include)
