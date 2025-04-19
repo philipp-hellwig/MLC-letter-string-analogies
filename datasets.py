@@ -1,9 +1,9 @@
 
 import string
 from copy import copy
-
 import torch
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,6 +104,9 @@ class LetterStringDataset(Dataset):
             self.samples.append({
                 "xq_context": row["xq_context"],
                 "yq": row["yq"],
+                "xq_context_tensor": self.langs["input"].symbols_to_tensor(row["xq_context"]),
+                "yq_tensor": self.langs["output"].symbols_to_tensor(row["yq"]),
+                "yq_sos_tensor": self.langs["output"].symbols_to_tensor([sos.strip()] + row["yq"], add_eos=False),
                 "transformation": row["transformation"],
                 "n_perm": row["n_perm"]
             })
@@ -115,73 +118,42 @@ class LetterStringDataset(Dataset):
         return self.samples[idx]
 
     def pprint(self, sample):
-        # Pretty print the episode
+        # Pretty print each episode
         print("\nProblems:")
         for problem, solution in zip(sample["xq_context"], sample["yq"]):
             print("".join(problem).replace("IO", " -> ").replace("SOS", "\n"), "-> ?", f"({"".join(solution)})")
 
-    def collate_fn(self, batch):
-        return get_ls_batch(batch, self.langs)
+    def collate_fn(self, samples):
+        # context and target as symbols:
+        xq_context = [s["xq_context"] for s in samples]
+        yq = [s["yq"] for s in samples]
 
-def pad_seq(seq, max_length):
-    # Pad token string sequence with the PAD_token symbol to achieve max_length
-    #
-    # Input
-    #  seq : list of symbols (as strings)
-    #
-    # Output
-    #  seq : padded list now extended to length max_length
-    seq += (max_length - len(seq)) * [PAD_token]
-    return seq
+        # extract tensors:
+        xq_tensors = [s["xq_context_tensor"] for s in samples]
+        yq_tensors = [s["yq_tensor"] for s in samples]
+        yq_sos_tensors = [s["yq_sos_tensor"] for s in samples]
 
+        # pad sequences
+        xq_padded = pad_sequence(xq_tensors, batch_first=True, padding_value=samples[0]["xq_context_tensor"].new_tensor([self.langs["input"].PAD_idx]).item())
+        yq_padded = pad_sequence(yq_tensors, batch_first=True, padding_value=samples[0]["yq_tensor"].new_tensor([self.langs["output"].PAD_idx]).item())
+        yq_sos_padded = pad_sequence(yq_sos_tensors, batch_first=True, padding_value=samples[0]["yq_sos_tensor"].new_tensor([self.langs["output"].PAD_idx]).item())
 
-def build_padded_tensor(list_seq, lang, add_eos=True, add_sos=False):
-    # Transform list of python lists to a padded torch tensors
-    # 
-    # Input
-    #  list_seq : list of n sequences (each sequence is a python list of token srings)
-    #  lang : language object for translation of token string to token index
-    #  add_eos : add end-of-sequence token at the end?
-    #  add_sos : add start-of-sequence token at the beginning?
-    #
-    # Output
-    #  z_padded : LongTensor (n x max_len)
-    #  z_lengths : python list of sequence lengths (n-length list of scalars)
-    n = len(list_seq)
-    if n==0: return [],[]
-    z_eos = list_seq
-    if add_sos: 
-        z_eos = [[SOS_token]+z for z in z_eos]
-    if add_eos:
-        z_eos = [z+[EOS_token] for z in z_eos]    
-    z_lengths = [len(z) for z in z_eos]
-    max_len = max(z_lengths) # maximum length in this episode
-    z_padded = [pad_seq(z, max_len) for z in z_eos]
-    z_padded = [lang.symbols_to_tensor(z, add_eos=False).unsqueeze(0) for z in z_padded]
-    z_padded = torch.cat(z_padded, dim=0) # n x max_len
-    return z_padded, z_lengths
+        # lengths
+        xq_lengths = [len(t) for t in xq_tensors]
+        yq_lengths = [len(t) for t in yq_tensors]
+        yq_sos_lengths = [len(t) for t in yq_sos_tensors]
 
-
-def get_ls_batch(samples, langs):
-    # Combine individual samples into a batch
-    xq_contexts = [sample["xq_context"] for sample in samples]
-    yqs = [sample["yq"] for sample in samples]
-    xq_context_padded, xq_context_lengths = build_padded_tensor(xq_contexts, langs['input'])
-    yq_padded, yq_lengths = build_padded_tensor(yqs, langs['output'])
-    yq_sos_padded, yq_sos_lengths = build_padded_tensor(yqs, langs['output'], add_eos=False, add_sos=True)  
-    transformations = [sample["transformation"] for sample in samples]
-    n_perms = [sample["n_perm"] for sample in samples]
-    return {
-        "xq_context": xq_contexts,
-        "yq": yqs,
-        "xq_context_padded": xq_context_padded,
-        "xq_context_lengths": xq_context_lengths,
-        "yq_padded": yq_padded,
-        "yq_lengths": yq_lengths,
-        "yq_sos_padded": yq_sos_padded,
-        "yq_sos_lengths": yq_sos_lengths,
-        "transformation": transformations,
-        "n_perm": n_perms
+        return {
+            "xq_context": xq_context,
+            "yq": yq,
+            "xq_context_padded": xq_padded,
+            "xq_context_lengths": xq_lengths,
+            "yq_padded": yq_padded,
+            "yq_lengths": yq_lengths,
+            "yq_sos_padded": yq_sos_padded,
+            "yq_sos_lengths": yq_sos_lengths,
+            "transformation": [s["transformation"] for s in samples],
+            "n_perm": [s["n_perm"] for s in samples],
         }
 
 
@@ -195,9 +167,14 @@ def set_batch_to_device(batch):
 
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
+    # example for creating Dataset and DataLoader objects:
     D_val = LetterStringDataset(data_dir="data", mode="val")
     item = D_val.__getitem__(0)
+    print("Dataset item:")
     print(item)
+
     val_dataloader = DataLoader(D_val, batch_size=25, collate_fn=D_val.collate_fn, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
     batch = next(iter(val_dataloader))
+    print("\nDataloader batch:")
+    print(f"with keys: {batch.keys()}\n")
     print(batch)

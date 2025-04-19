@@ -69,11 +69,8 @@ class CheckPoint:
         # Load validation dataset
         D_train = dat.LetterStringDataset(data_dir=data_dir, mode="train")
         D_val = dat.LetterStringDataset(data_dir=data_dir, mode="val")
-        langs = D_val.langs
-        train_dataloader = DataLoader(D_train,batch_size=self.checkpoint["batch_size"],
-                                    collate_fn=lambda x:dat.get_ls_batch(x,langs),shuffle=False)
-        val_dataloader = DataLoader(D_val,batch_size=self.checkpoint["batch_size"],
-                                        collate_fn=lambda x:dat.get_ls_batch(x,langs),shuffle=False)
+        train_dataloader = DataLoader(D_train,batch_size=self.checkpoint["batch_size"], collate_fn=D_train.collate_fn)
+        val_dataloader = DataLoader(D_val,batch_size=self.checkpoint["batch_size"], collate_fn=D_val.collate_fn)
         
         return (train_dataloader, val_dataloader)
 

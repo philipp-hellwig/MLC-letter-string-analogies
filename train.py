@@ -50,7 +50,7 @@ def main():
     parser.add_argument('--nepochs', type=int, default=50, help='number of training epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
     parser.add_argument('--lr_end_factor', type=int, default=0.05, help='factor X for decrease learning rate linearly from 1.0*lr to X*lr across training')
-    parser.add_argument('--no_lr_warmup', default=False, action='store_true', help='Turn off learning rate warm up (by default, we use 1 epoch of warm up)')
+    parser.add_argument('--lr_warmup', default=True, action='store_true', help='Turn off learning rate warm up (by default, we use 1 epoch of warm up)')
     parser.add_argument('--nlayers_encoder', type=int, default=3, help='number of layers for encoder')
     parser.add_argument('--nlayers_decoder', type=int, default=3, help='number of layers for decoder')
     parser.add_argument('--emb_size', type=int, default=128, help='size of embedding')
@@ -69,7 +69,7 @@ def main():
     train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
     
     D_val = dat.LetterStringDataset(data_dir="data", mode="val")
-    val_dataloader = DataLoader(D_val, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
+    val_dataloader = DataLoader(D_val, batch_size=args.batch_size, collate_fn=D_train.collate_fn)
 
     # setup model:
     net = MLC(
@@ -96,7 +96,7 @@ def main():
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
     optimizer = torch.optim.AdamW(net.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
 
-    if args.no_lr_warmup:
+    if args.lr_warmup:
         print('    with LR warmup ON (1st epoch)')
         scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-2)
         nstep_epoch_estimate = math.floor(len(D_train)/args.batch_size)
@@ -152,7 +152,7 @@ def main():
 
 
             # if warm-up, adjust learning rate for each step of the first epoch
-            if args.no_lr_warmup and epoch==1: 
+            if args.lr_warmup and epoch==1: 
                 scheduler_warmup.step()
         
 
@@ -167,13 +167,11 @@ def main():
 
 
         # after each epoch, adjust the general learning rate
-        if epoch>1 or not args.no_lr_warmup: 
+        if epoch>1 or not args.lr_warmup: 
             scheduler_epoch.step()
         utils.save_checkpoint(model_save_path,step,epoch,net,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state)
-
     print('Training complete.')
 
 
 if __name__ == "__main__":
     main()
-    
