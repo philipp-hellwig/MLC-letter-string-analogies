@@ -1,6 +1,7 @@
-
 import string
+from collections import defaultdict
 from copy import copy
+
 import torch
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
@@ -31,130 +32,106 @@ class Lang:
         self.IN_OUT_idx = n+3
         self.PAD_token = PAD_token
         
-    def symbols_to_tensor(self, mylist, add_eos=True):
-        # Convert a list of token strings to token index (adding a EOS token at end)
-        # 
-        # Input
-        #  mylist  : list of m symbols as strings
-        #  add_eos : true/false, if true add the EOS symbol at end
-        #
-        # Output
-        #  output : [m or m+1 LongTensor] token index for each symbol (plus EOS if appropriate)
-        mylist = copy(mylist)
-        if add_eos: mylist.append(EOS_token)
-        indices = [self.symbol2index[s] for s in mylist]
-        output = torch.LongTensor(indices) # keep on CPU since this occurs inside Dataset getitem..
+    def symbols_to_tensor(self, symbols: list, add_eos=True) -> torch.LongTensor:
+        """Convert a list of token strings to a tensor of symbol indices. Adds EOS token at end by default
+
+        Args:
+            symbols (list): list of m symbols as strings
+            add_eos (bool, optional): Add EOS token at the end of the sequence? Defaults to True.
+
+        Returns:
+            torch.LongTensor: LongTensor of length [m or m+1(in case `add_eos`=True) ] which contains the token index (integer) for each symbol (plus EOS if appropriate).
+        """
+        symbols = copy(symbols)
+        if add_eos: symbols.append(EOS_token)
+        indices = [self.symbol2index[s] for s in symbols]
+        output = torch.tensor(indices, dtype=torch.int64)
         return output
 
-    def tensor_to_symbols(self, v):
-        # Convert tensor of token index to token strings, breaking where we get a EOS token.
-        #   The EOS token is not included at the end in the result string list.
-        # 
-        # Input
-        #  v : python list of m indices, or 1D tensor
-        #   
-        # Output
-        #  mylist : list of symbols (excluding EOS)
-        if torch.is_tensor(v):
-            assert v.dim()==1
-            v = v.tolist()
-        assert isinstance(v, list)
-        mylist = []
-        for x in v:
+    def tensor_to_symbols(self, indices) -> list:
+        """Convert tensor of token index to token strings, breaking where we get a EOS token.
+        The EOS token is not included at the end in the result string list.
+
+        Args:
+            indices: list of symbol indices or tensor of symbols
+
+        Returns:
+            list: A list of symbols (str) that correspond to the sequence of symbol `indices`. 
+        """
+        if torch.is_tensor(indices):
+            assert indices.dim()==1
+            indices = indices.tolist()
+        assert isinstance(indices, list)
+        symbols = []
+        for x in indices:
             s = self.index2symbol[x]
             if s == EOS_token:
                 break
-            mylist.append(s)
-        return mylist
+            symbols.append(s)
+        return symbols
+
 
 class LetterStringDataset(Dataset):
-    # dataset version where data is loaded from one large .csv file rather than many small .csv files
+    def __init__(self, mode: str, data_dir: str, alphabet: list=list(string.ascii_lowercase)):
+        """Initialize a LetterStringDataset from a .csv file located at `data_dir`/`mode`.csv.
 
-    def __init__(self, mode: str, data_dir: str):
-        # Input
-        # mode : 'train' or 'val' data
-        # data_dir : directory where data is stored
-
+        Args:
+            mode (str): Either "train" or "val"
+            data_dir (str): The directory the data is stored in.
+            alphabet (list): The unique letters that occur in this alphabet.
+        """
         assert mode in ['train','val']        
-        self.placeholder_length = 100_000 # placeholder number of episodes in epoch
         self.mode = mode
         self.train = mode == 'train'
-        self.randomize_order = True
-        alphabet = list(string.ascii_lowercase)
         self.langs = {'input' : Lang(alphabet), 'output': Lang(alphabet)}
-
         # load data:
         self.data = pd.read_csv(f"{data_dir}/{mode}.csv")
-        
         # preprocess data:
         # split query into query xq and target yq
         self.data[["xq","yq"]] = self.data["query"].str.split(">", expand=True)
         self.data["xq"] = self.data["xq"].str.strip()
         self.data["yq"] = self.data["yq"].str.strip().str.split(" ")
         # create context:
-        sos = " " + self.langs["input"].index2symbol[self.langs["input"].SOS_idx] + " "
+        sos = self.langs["input"].index2symbol[self.langs["input"].SOS_idx]
         io = self.langs["input"].index2symbol[self.langs["input"].IN_OUT_idx]
-        self.data["xq_context"] = self.data["alphabet"] + sos + self.data["study"] + sos + self.data["xq"]
+        # prepare context
+        self.data["xq_context"] = self.data["alphabet"] + " " + sos + " " + self.data["study"] + " " + sos + " " + self.data["xq"]
         self.data["xq_context"] = self.data["xq_context"].str.replace(">", io)
         self.data["xq_context"] = self.data["xq_context"].str.split(" ")
-
-        # convert to a list of dicts for faster processing
-        self.samples = []
-        for _, row in self.data.iterrows():
-            self.samples.append({
-                "xq_context": row["xq_context"],
-                "yq": row["yq"],
-                "xq_context_tensor": self.langs["input"].symbols_to_tensor(row["xq_context"]),
-                "yq_tensor": self.langs["output"].symbols_to_tensor(row["yq"]),
-                "yq_sos_tensor": self.langs["output"].symbols_to_tensor([sos.strip()] + row["yq"], add_eos=False),
-                "transformation": row["transformation"],
-                "n_perm": row["n_perm"]
-            })
+        self.data["yq_lengths"] = self.data["yq"].apply(lambda x: len(x))
+        # create tensors
+        self.data["xq_context_tensor"] = self.data["xq_context"].apply(lambda x: self.langs["input"].symbols_to_tensor(x))
+        self.data["yq_tensor"] = self.data["yq"].apply(lambda x: self.langs["output"].symbols_to_tensor(x))
+        # yq shifted right (starting with sos token)
+        self.data["yq_sos_tensor"] = self.data["yq"].apply(lambda x: [sos] + x).apply(lambda x: self.langs["output"].symbols_to_tensor(x, add_eos=False))
+        # convert to list of dicts for easier retrieval by iterator
+        self.data = self.data.to_dict("records")
 
     def __len__(self):
-        return len(self.samples)
+        return len(self.data)
 
-    def __getitem__(self, idx: int=0):
-        return self.samples[idx]
+    def __getitem__(self, idx: int):
+        return self.data[idx]
 
-    def pprint(self, sample):
-        # Pretty print each episode
-        print("\nProblems:")
-        for problem, solution in zip(sample["xq_context"], sample["yq"]):
-            print("".join(problem).replace("IO", " -> ").replace("SOS", "\n"), "-> ?", f"({"".join(solution)})")
+    def collate_fn(self, problems: list[dict]) -> dict:
+        """Prepares a batch of problems for passing through MLC model. Passed to DataLoader as argument `collate_fn`.
 
-    def collate_fn(self, samples):
-        # context and target as symbols:
-        xq_context = [s["xq_context"] for s in samples]
-        yq = [s["yq"] for s in samples]
+        Args:
+            problems (list[dict]): list of letter-string problems obtained via `__getitem__()`
 
-        # extract tensors:
-        xq_tensors = [s["xq_context_tensor"] for s in samples]
-        yq_tensors = [s["yq_tensor"] for s in samples]
-        yq_sos_tensors = [s["yq_sos_tensor"] for s in samples]
-
-        # pad sequences
-        xq_padded = pad_sequence(xq_tensors, batch_first=True, padding_value=samples[0]["xq_context_tensor"].new_tensor([self.langs["input"].PAD_idx]).item())
-        yq_padded = pad_sequence(yq_tensors, batch_first=True, padding_value=samples[0]["yq_tensor"].new_tensor([self.langs["output"].PAD_idx]).item())
-        yq_sos_padded = pad_sequence(yq_sos_tensors, batch_first=True, padding_value=samples[0]["yq_sos_tensor"].new_tensor([self.langs["output"].PAD_idx]).item())
-
-        # lengths
-        xq_lengths = [len(t) for t in xq_tensors]
-        yq_lengths = [len(t) for t in yq_tensors]
-        yq_sos_lengths = [len(t) for t in yq_sos_tensors]
-
-        return {
-            "xq_context": xq_context,
-            "yq": yq,
-            "xq_context_padded": xq_padded,
-            "xq_context_lengths": xq_lengths,
-            "yq_padded": yq_padded,
-            "yq_lengths": yq_lengths,
-            "yq_sos_padded": yq_sos_padded,
-            "yq_sos_lengths": yq_sos_lengths,
-            "transformation": [s["transformation"] for s in samples],
-            "n_perm": [s["n_perm"] for s in samples],
-        }
+        Returns:
+            dict: Padded tensors for MLC forward pass ("xq_context_padded", "yq_padded", "yq_sos_padded") & meta data about each problem in the batch. 
+        """
+        batch = defaultdict(list)
+        for d in problems:
+            for key, value in d.items():
+                batch[key].append(value)
+        batch.default_factory = None
+        # pad tensors:
+        batch["xq_context_padded"] = pad_sequence(batch["xq_context_tensor"], batch_first=True, padding_value=self.langs["input"].PAD_idx)
+        batch["yq_padded"] = pad_sequence(batch["yq_tensor"], batch_first=True, padding_value=self.langs["output"].PAD_idx)
+        batch["yq_sos_padded"] = pad_sequence(batch["yq_sos_tensor"], batch_first=True, padding_value=self.langs["output"].PAD_idx)
+        return set_batch_to_device(batch)
 
 
 def set_batch_to_device(batch):
@@ -166,8 +143,8 @@ def set_batch_to_device(batch):
 
 
 if __name__ == "__main__":
-    from torch.utils.data import DataLoader
     # example for creating Dataset and DataLoader objects:
+    from torch.utils.data import DataLoader
     D_val = LetterStringDataset(data_dir="data", mode="val")
     item = D_val.__getitem__(0)
     print("Dataset item:")

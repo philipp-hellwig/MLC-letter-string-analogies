@@ -11,12 +11,12 @@ import datasets as dat
 from evaluate import evaluate_ll, evaluate_predictions
 from model import MLC
 from train_lib import timeSince
-import utils
+import checkpoint
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def train(batch, net: MLC, loss_fn, optimizer):
+def train(batch, net: MLC, loss_fn, optimizer) -> dict:
     # Update the model for one batch (which is a set of episodes)
     #
     # Input
@@ -64,55 +64,72 @@ def main():
     args = parser.parse_args()
     model_save_path = f"{args.dir_model}/{args.filename_model}"
 
-    # initialize datasets and dataloaders:
-    D_train = dat.LetterStringDataset(data_dir="data", mode="train")
-    train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
-    
-    D_val = dat.LetterStringDataset(data_dir="data", mode="val")
-    val_dataloader = DataLoader(D_val, batch_size=args.batch_size, collate_fn=D_train.collate_fn)
+    if args.resume:
+            # TODO check that run arguments are the same:
+            cp.check_compatibility()
+            # curr_args = vars(args)
+            # prev_args = vars(checkpoint['args'])
+            # for k in prev_args.keys():
+            #     if k!='resume': assert(prev_args[k]==curr_args[k]) # check that command line args match the checkpoint's
+            # for k in params.keys():
+            #     if k not in {'langs','args'}: assert(params[k]==checkpoint[k]) # check that hyperparams match the checkpoint's
+            cp = checkpoint.CheckPoint(path=model_save_path, device=DEVICE)
+            train_dataloader, val_dataloader = cp.load_dataloaders()
 
-    # setup model:
-    net = MLC(
-        hidden_size=args.emb_size, 
-        input_size=D_train.langs['input'].n_symbols, 
-        output_size=D_train.langs['output'].n_symbols,
-        PAD_idx_input=D_train.langs['input'].PAD_idx, 
-        PAD_idx_output=D_train.langs['output'].PAD_idx,
-        nlayers_encoder=args.nlayers_encoder, 
-        nlayers_decoder=args.nlayers_decoder,
-        dropout_p=args.dropout,
-        activation= args.act,
-        ff_mult=args.ff_mult
-    )
-    net = net.to(device=DEVICE)
-    print(net)
+            loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
+            optimizer = torch.optim.AdamW(net.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
+            
+    else: # training a new model (not resuming)
+        # initialize datasets and dataloaders:
+        D_train = dat.LetterStringDataset(data_dir="data", mode="train")
+        train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
+        
+        D_val = dat.LetterStringDataset(data_dir="data", mode="val")
+        val_dataloader = DataLoader(D_val, batch_size=5000, collate_fn=D_val.collate_fn)
 
-    # group args in dict for when model is saved:
+        # setup model:
+        net = MLC(
+            hidden_size=args.emb_size, 
+            input_size=D_train.langs['input'].n_symbols, 
+            output_size=D_train.langs['output'].n_symbols,
+            PAD_idx_input=D_train.langs['input'].PAD_idx, 
+            PAD_idx_output=D_train.langs['output'].PAD_idx,
+            nlayers_encoder=args.nlayers_encoder, 
+            nlayers_decoder=args.nlayers_decoder,
+            dropout_p=args.dropout,
+            activation= args.act,
+            ff_mult=args.ff_mult
+        )
+        net = net.to(device=DEVICE)
+        print(net)
+
+        # setup loss function and optimizer:
+        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
+        optimizer = torch.optim.AdamW(net.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
+
+        if args.lr_warmup:
+            print('    with LR warmup ON (1st epoch)')
+            scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-2)
+            nstep_epoch_estimate = math.floor(len(D_train)/args.batch_size)
+            scheduler_warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-4, end_factor=1.0, total_iters=nstep_epoch_estimate)
+        else:            
+            print('    with LR warmup OFF')
+            scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-1)
+
+        nsteps_estimate = math.ceil(args.nepochs*len(D_train)/args.batch_size)
+        avg_train_loss = 0.
+        best_val_loss = float('inf')
+        counter = 0 # num updates since the loss was last reported
+        step = 0
+        train_tracker = []
+        val_accuracy_by_epoch = []
+        epoch_start = 1
+
+    # group args in dict for checkpoint saving:
     params_state = {'langs': D_train.langs, 'emb_size':args.emb_size, 'input_size':D_train.langs['input'].n_symbols, 'output_size':D_train.langs['output'].n_symbols,
                     'dropout':args.dropout, 'nlayers_encoder':args.nlayers_encoder, 'nlayers_decoder':args.nlayers_decoder,
                     'nepochs':args.nepochs, 'batch_size':args.batch_size, 'activation':"gelu", 'args':args}
-    
-    # setup loss function and optimizer:
-    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
-    optimizer = torch.optim.AdamW(net.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
-
-    if args.lr_warmup:
-        print('    with LR warmup ON (1st epoch)')
-        scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-2)
-        nstep_epoch_estimate = math.floor(len(D_train)/args.batch_size)
-        scheduler_warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-4, end_factor=1.0, total_iters=nstep_epoch_estimate)
-    else:            
-        print('    with LR warmup OFF')
-        scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-1)
-
-    nsteps_estimate = math.ceil(args.nepochs*len(D_train)/args.batch_size)
-    avg_train_loss = 0.
-    best_val_loss = float('inf')
-    counter = 0 # num updates since the loss was last reported
-    step = 0
-    train_tracker = []
-    val_accuracy_by_epoch = []
-    epoch_start = 1
+        
     start = time.time()
     
     print(f"Training on {DEVICE}.")
@@ -120,8 +137,7 @@ def main():
     for epoch in range(epoch_start,args.nepochs+1):
         print("Epoch",epoch,"\n-------------------------------")
 
-        for batch_idx, train_batch in enumerate(train_dataloader):
-            train_batch = dat.set_batch_to_device(train_batch)
+        for train_batch in train_dataloader:
             dict_loss = train(train_batch, net, loss_fn, optimizer)
             avg_train_loss += dict_loss['total']
             counter += 1
@@ -142,7 +158,7 @@ def main():
                 # save new best model if specified and val_loss is the lowest:
                 if args.save_best and val_loss < best_val_loss and (epoch > args.nepochs * args.save_best_skip):
                     best_val_loss = val_loss
-                    utils.save_checkpoint(model_save_path,step,epoch,net,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state,is_best=True)
+                    checkpoint.save(model_save_path,step,epoch,net,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state,is_best=True)
                 
                 # update best validation loss
                 best_val_loss = val_loss if val_loss < best_val_loss else best_val_loss
@@ -169,9 +185,16 @@ def main():
         # after each epoch, adjust the general learning rate
         if epoch>1 or not args.lr_warmup: 
             scheduler_epoch.step()
-        utils.save_checkpoint(model_save_path,step,epoch,net,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state)
+        checkpoint.save(model_save_path,step,epoch,net,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state)
     print('Training complete.')
 
 
 if __name__ == "__main__":
-    main()
+    import cProfile
+    import pstats
+    with cProfile.Profile() as pr:
+        main()
+
+    stats = pstats.Stats(pr)
+    stats.sort_stats(pstats.SortKey.TIME)
+    stats.dump_stats(filename='train.prof')

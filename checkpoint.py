@@ -7,27 +7,24 @@ import seaborn as sns
 import model
 import datasets as dat
 
+
 class CheckPoint:
     def __init__(self, path: str, device: torch.device):
         self.checkpoint = torch.load(path, map_location=device)
         self.train_data = pd.DataFrame(self.checkpoint["train_tracker"])
         self.device = device
     
-    def plot_training_data(self) -> tuple[plt.Figure, any]:
-        fig, ax = plt.subplots(2, 1, figsize=(8,10))
-        # learning rate plot
-        _ = sns.lineplot(data=self.train_data, x="step", y="lr", ax=ax[0])
-        _ = ax[0].set_title("Learning Rate")
+    def plot_learning_rate(self, ax) -> plt.Axes:
+        lr_plot = sns.lineplot(data=self.train_data, x="step", y="lr", ax=ax)
+        return lr_plot
 
-        # loss plot
+    def plot_loss(self, ax) -> plt.Axes:
         loss_data = pd.melt(self.train_data, id_vars=['step'], value_vars=['avg_train_loss','val_loss'], var_name="loss")
         loss_data["loss"] = loss_data["loss"].str.replace("_loss", "")
-        _ = sns.lineplot(data=loss_data, x='step', y='value', hue='loss', ax=ax[1])
-        _ = ax[1].set_title("Loss")
-
-        return fig
+        loss_plot = sns.lineplot(data=loss_data, x='step', y='value', hue='loss', ax=ax)
+        return loss_plot
     
-    def load_model(self, verbose=True) -> model.MLC:
+    def load_model(self, verbose: bool=True) -> model.MLC:
         """Load MLC model using a checkpoint file (.pt).
 
         Args:
@@ -57,25 +54,26 @@ class CheckPoint:
         if verbose:
             best_val_loss = -float('inf')
             if 'best_val_loss' in self.checkpoint: best_val_loss = self.checkpoint['best_val_loss']
-            print(' Loading model that has completed (or started) ' + str(self.checkpoint['epoch']) + ' of ' + str(self.checkpoint['nepochs']) + ' epochs')
-            print('  batch size:', self.checkpoint['batch_size'])
-            print('  number of steps:', self.checkpoint['step'])
-            print('  best val loss achieved: {:.4f}'.format(best_val_loss))
+            print('Loading model that has completed (or started) ' + str(self.checkpoint['epoch']) + ' of ' + str(self.checkpoint['nepochs']) + ' epochs')
+            print('\tbatch size:', self.checkpoint['batch_size'])
+            print(f"\tnumber of steps:{self.checkpoint['step']:,}")
+            print('\tbest val loss achieved: {:.4f}'.format(best_val_loss))
             print(net)
         
         return net
     
-    def load_dataloaders(self, data_dir="data"):            
+    def load_dataloaders(self, data_dir="data", verbose: bool=True):            
         # Load validation dataset
         D_train = dat.LetterStringDataset(data_dir=data_dir, mode="train")
         D_val = dat.LetterStringDataset(data_dir=data_dir, mode="val")
         train_dataloader = DataLoader(D_train,batch_size=self.checkpoint["batch_size"], collate_fn=D_train.collate_fn)
-        val_dataloader = DataLoader(D_val,batch_size=self.checkpoint["batch_size"], collate_fn=D_val.collate_fn)
-        
+        val_dataloader = DataLoader(D_val,batch_size=5000, collate_fn=D_val.collate_fn)
+        if verbose:
+            print(f"Loading training ({len(D_train):,} samples) and validation ({len(D_val):,} samples) dataloaders.")
         return (train_dataloader, val_dataloader)
 
 
-def save_checkpoint(fn_out_model, step, epoch, net, optimizer, scheduler_epoch, train_tracker, val_accuracies, best_val_loss, params, is_best=False):
+def save(fn_out_model, step, epoch, net, optimizer, scheduler_epoch, train_tracker, val_accuracies, best_val_loss, params, is_best=False):
     # Input
     #  fn_out_model : filename for saving the model
     #  step : number of gradient steps
@@ -91,13 +89,13 @@ def save_checkpoint(fn_out_model, step, epoch, net, optimizer, scheduler_epoch, 
     else:
         print('> Saving model as',fn_out_model, end='')
     state = {'step' : step,
-             'epoch' : epoch,
-             'nets_state_dict' : net.state_dict(),
-             'optimizer_state_dict' : optimizer.state_dict(),
-             'scheduler_epoch_state_dict' : scheduler_epoch.state_dict(),
-             'train_tracker' : train_tracker,
-             'val_accuracy' : val_accuracies,
-             'best_val_loss' : best_val_loss}
+            'epoch' : epoch,
+            'nets_state_dict' : net.state_dict(),
+            'optimizer_state_dict' : optimizer.state_dict(),
+            'scheduler_epoch_state_dict' : scheduler_epoch.state_dict(),
+            'train_tracker' : train_tracker,
+            'val_accuracy' : val_accuracies,
+            'best_val_loss' : best_val_loss}
     state.update(params)
     torch.save(state, fn_out_model)
     print(' < Done. >')

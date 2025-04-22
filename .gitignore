@@ -1,7 +1,5 @@
+__pycache__
 data
-presentation_dataset_files
-*.pyc
-*.html
-*.css
 models
-*.prof
+presentations
+profiling

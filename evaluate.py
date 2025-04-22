@@ -1,8 +1,7 @@
+import numpy as np
 import torch
 from torch.distributions import Categorical
 import torch.nn.functional as F
-import numpy as np
-import torch.utils
 import torch.utils.data
 from tqdm import tqdm
 
@@ -29,24 +28,24 @@ def predict(batch, net, langs, max_length, eval_type='max', out_mask_allow=[]):
         # memory : b*nq x maxlength_src x hidden_size
         # memory_padding_mask : b*nq x maxlength_src (False means leave alone)
     m = len(batch['yq']) # b*nq
-    z_padded = torch.tensor([emission_lang.symbol2index[dat.SOS_token]]*m) # b*nq length tensor
+    z_padded = torch.tensor([emission_lang.symbol2index[dat.SOS_token]]*m, device=DEVICE) # b*nq length tensor
     z_padded = z_padded.unsqueeze(1) # [b*nq x 1] tensor
-    z_padded = z_padded.to(device=DEVICE)
+    # z_padded = z_padded.to(device=DEVICE)
     max_length_target = batch['yq_padded'].shape[1]-1 # length without EOS
     assert max_length >= max_length_target # make sure that the net can generate targets of the proper length
 
     # make the output mask if certain emissions are restricted
     if use_mask:
         assert dat.EOS_token in out_mask_allow # EOS must be included as an allowed symbol
-        additive_out_mask = -torch.inf * torch.ones((m,net.output_size), dtype=torch.float)
-        additive_out_mask = additive_out_mask.to(device=DEVICE)
+        additive_out_mask = -torch.inf * torch.ones((m,net.output_size), dtype=torch.float, device=DEVICE)
+        # additive_out_mask = additive_out_mask.to(device=DEVICE)
         for s in out_mask_allow:
             sidx = langs['output'].symbol2index[s]
             additive_out_mask[:,sidx] = 0.
 
     # Run through decoder
-    all_decoder_outputs = torch.zeros((m, max_length), dtype=torch.long)
-    all_decoder_outputs = all_decoder_outputs.to(device=DEVICE)
+    all_decoder_outputs = torch.zeros((m, max_length), dtype=torch.long, device=DEVICE)
+    # all_decoder_outputs = all_decoder_outputs.to(device=DEVICE)
     for t in range(max_length):
         decoder_output = net.decode(z_padded, memory, memory_padding_mask)
             # decoder_output is b*nq x (t+1) x output_size
@@ -72,23 +71,23 @@ def predict(batch, net, langs, max_length, eval_type='max', out_mask_allow=[]):
     return yq_predict
 
 
-def evaluate_ll(val_dataloader, net, langs, loss_fn=[], p_lapse=0.0):
+def evaluate_ll(dataloader: torch.utils.data.DataLoader, net, langs, loss_fn=[], p_lapse=0.0):
     # Evaluate the total (sum) log-likelihood across the entire validation set
     # 
     # Input
-    #   val_dataloader : 
-    #   net : BIML model
+    #   dataloader: A torch.utils.DataLoader that represents validation/ test set.
+    #   net : MLC model
     #   langs : dict of dat.Lang classes
     #   p_lapse : (default 0.) combine decoder outputs (prob 1-p_lapse) as mixture with uniform distribution (prob p_lapse)
     net.eval()
     total_N = 0
     total_ll = 0
     if not loss_fn: loss_fn = torch.nn.CrossEntropyLoss(ignore_index=langs['output'].PAD_idx)
-    for batch_idx, val_batch in enumerate(val_dataloader):
-        val_batch = dat.set_batch_to_device(val_batch)
-        dict_loss = batch_ll(val_batch, net, loss_fn, langs, p_lapse=p_lapse)
-        total_ll += dict_loss['ll']
-        total_N += dict_loss['N']
+    with torch.no_grad():
+        for batch in dataloader:
+            dict_loss = batch_ll(batch, net, loss_fn, langs, p_lapse=p_lapse)
+            total_ll += dict_loss['ll']
+            total_N += dict_loss['N']
     return total_ll, total_N
 
 
@@ -102,10 +101,9 @@ def batch_ll(batch, net, loss_fn, langs, p_lapse=0.0):
     net.eval()
     target_batches = batch['yq_padded'] # b*nq x max_length
     target_lengths = batch['yq_lengths'] # list of size b*nq
+    # Shifted targets with padding (added SOS symbol at beginning and removed EOS symbol) 
     target_shift = batch['yq_sos_padded'] # b*nq x max_length
-        # Shifted targets with padding (added SOS symbol at beginning and removed EOS symbol) 
-    decoder_output = net(target_shift, batch)
-        # b*nq x max_length x output_size    
+    decoder_output = net(target_shift, batch) # b*nq x max_length x output_size    
 
     logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch*max_len, output_size)
     if p_lapse > 0:
@@ -160,8 +158,8 @@ def smooth_decoder_outputs(logits_flat,p_lapse,lapse_symb_include,langs):
     sz = logits_flat.size() # get size (batch*max_len, output_size)
     probs_flat = F.softmax(logits_flat,dim=1) # (batch*max_len, output_size)
     num_classes_lapse = len(lapse_idx_include)
-    probs_lapse = torch.zeros(sz, dtype=torch.float)
-    probs_lapse = probs_lapse.to(device=DEVICE)
+    probs_lapse = torch.zeros(sz, dtype=torch.float, device=DEVICE)
+    # probs_lapse = probs_lapse.to(device=DEVICE)
     probs_lapse[:,lapse_idx_include] = 1./float(num_classes_lapse)
     log_probs_flat = torch.log((1-p_lapse)*probs_flat + p_lapse*probs_lapse) # (batch*max_len, output_size)
     return log_probs_flat
