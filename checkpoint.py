@@ -62,12 +62,12 @@ class CheckPoint:
         
         return net
     
-    def load_dataloaders(self, data_dir="data", verbose: bool=True):            
+    def load_dataloaders(self, data_dir="data", verbose: bool=True, val_batch_size=25):            
         # Load validation dataset
         D_train = dat.LetterStringDataset(data_dir=data_dir, mode="train")
         D_val = dat.LetterStringDataset(data_dir=data_dir, mode="val")
         train_dataloader = DataLoader(D_train,batch_size=self.checkpoint["batch_size"], collate_fn=D_train.collate_fn)
-        val_dataloader = DataLoader(D_val,batch_size=5000, collate_fn=D_val.collate_fn)
+        val_dataloader = DataLoader(D_val,batch_size=val_batch_size, collate_fn=D_val.collate_fn)
         if verbose:
             print(f"Loading training ({len(D_train):,} samples) and validation ({len(D_val):,} samples) dataloaders.")
         return (train_dataloader, val_dataloader)

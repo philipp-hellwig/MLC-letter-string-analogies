@@ -133,12 +133,12 @@ def evaluate_predictions(dataloader: torch.utils.data.DataLoader, net, max_lengt
     net.eval()
     scores = []
     transformation_types = []
-    for batch in tqdm(dataloader): # each batch
-        batch = dat.set_batch_to_device(batch)
-        predictions = predict(batch, net, dataloader.dataset.langs, max_length, eval_type=eval_type)
-        batch_scores = [pred==yq for pred, yq in zip(predictions, batch["yq"])]
-        scores += batch_scores
-        transformation_types += batch["transformation"]
+    with torch.no_grad():
+        for batch in tqdm(dataloader): # each batch
+            predictions = predict(batch, net, dataloader.dataset.langs, max_length, eval_type=eval_type)
+            batch_scores = [pred==yq for pred, yq in zip(predictions, batch["yq"])]
+            scores += batch_scores
+            transformation_types += batch["transformation"]
 
     return (np.array(scores), np.array(transformation_types))
 

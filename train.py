@@ -1,4 +1,5 @@
 
+from collections import defaultdict
 import time
 import argparse
 import math
@@ -16,30 +17,34 @@ import checkpoint
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def train(batch, net: MLC, loss_fn, optimizer) -> dict:
-    # Update the model for one batch (which is a set of episodes)
-    #
-    # Input
-    #   batch : dict output from dat.get_mlc_batch
-    #   net : MLC model
-    #   loss_fn : loss function
-    #   optimizer : torch optimizer (AdamW)
+def train(batch: defaultdict, net: MLC, loss_fn, optimizer) -> float:
+    """Train MLC model on a batch of letter-string problems.
+
+    Args:
+        batch (defaultdict): A dictionary that represents a batch of letter-string problems.
+        net (MLC): MLC seq2seq encoder-decoder.
+        loss_fn (_type_): loss function (typically torch.nn.CrossEntropyLoss)
+        optimizer (_type_): optimizer (typically torch.optim.adamw)
+
+    Returns:
+        float: The mean loss of the model predictions for this batch.
+    """
     optimizer.zero_grad()
     net.train()
-
-    target_batches = batch['yq_padded'] # b*nq x max_length
-    target_shift = batch['yq_sos_padded'] # b*nq x max_length
+    target_batches = batch['yq_padded'] # (batch_size, max_target_length + 1)
     # shifted targets with padding (added SOS symbol at beginning and removed EOS symbol) 
-    decoder_output = net(target_shift, batch) # b*nq x max_length x output_size
-    logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (b*nq*max_length, output_size)
+    target_shifted_right = batch['yq_sos_padded'] # (batch_size, max_target_length + 1)
+    # forward pass through MLC
+    decoder_output = net(target_shifted_right, batch) # (batch_size, max_target_length + 1, n_symbols)
+    # flatten first two dimensions to pass to loss function:
+    logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch_size * max_target_length + 1, output_size)
     loss = loss_fn(logits_flat, target_batches.reshape(-1))
     assert(not torch.isinf(loss))
     assert(not torch.isnan(loss))
+    # backpropagate gradients and take optimization step:
     loss.backward()
     optimizer.step()
-    dict_loss = {}
-    dict_loss['total'] = loss.cpu().item()
-    return dict_loss
+    return loss.cpu().item()
 
 
 def main():
@@ -65,6 +70,7 @@ def main():
     model_save_path = f"{args.dir_model}/{args.filename_model}"
 
     if args.resume:
+            raise NotImplementedError("resume==True not supported yet")
             # TODO check that run arguments are the same:
             cp.check_compatibility()
             # curr_args = vars(args)
@@ -138,8 +144,8 @@ def main():
         print("Epoch",epoch,"\n-------------------------------")
 
         for train_batch in train_dataloader:
-            dict_loss = train(train_batch, net, loss_fn, optimizer)
-            avg_train_loss += dict_loss['total']
+            loss = train(train_batch, net, loss_fn, optimizer)
+            avg_train_loss += loss
             counter += 1
             step += 1  
                         
