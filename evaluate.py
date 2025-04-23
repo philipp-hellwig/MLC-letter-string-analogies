@@ -10,21 +10,21 @@ import datasets as dat
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def predict(batch, net, langs, max_length, eval_type='max', out_mask_allow=[]):
+def predict(batch, model, langs, max_length, eval_type='max', out_mask_allow=[]):
     # Predicts outputs for problem batch until max_length is reached or EOS is found.
     #
     #  Input
     #   batch : from dat.make_biml_batch
-    #   net : MLC model
+    #   model : MLC model
     #   max_length : maximum length of output sequences
     #   langs : dict of dat.Lang classes
     #   eval_type : 'max' for greedy decoding, 'sample' for sample from distribution
     #   out_mask_allow : default=[]; list of emission symbols (strings) we want to allow. Default of [] allows all output emissions
     assert eval_type in ['max','sample']
-    net.eval()
+    model.eval()
     emission_lang = langs['output']
     use_mask = len(out_mask_allow)>0
-    memory, memory_padding_mask = net.encode(batch) 
+    memory, memory_padding_mask = model.encode(batch) 
         # memory : b*nq x maxlength_src x hidden_size
         # memory_padding_mask : b*nq x maxlength_src (False means leave alone)
     m = len(batch['yq']) # b*nq
@@ -32,12 +32,12 @@ def predict(batch, net, langs, max_length, eval_type='max', out_mask_allow=[]):
     z_padded = z_padded.unsqueeze(1) # [b*nq x 1] tensor
     # z_padded = z_padded.to(device=DEVICE)
     max_length_target = batch['yq_padded'].shape[1]-1 # length without EOS
-    assert max_length >= max_length_target # make sure that the net can generate targets of the proper length
+    assert max_length >= max_length_target # make sure that the model can generate targets of the proper length
 
     # make the output mask if certain emissions are restricted
     if use_mask:
         assert dat.EOS_token in out_mask_allow # EOS must be included as an allowed symbol
-        additive_out_mask = -torch.inf * torch.ones((m,net.output_size), dtype=torch.float, device=DEVICE)
+        additive_out_mask = -torch.inf * torch.ones((m,model.output_size), dtype=torch.float, device=DEVICE)
         # additive_out_mask = additive_out_mask.to(device=DEVICE)
         for s in out_mask_allow:
             sidx = langs['output'].symbol2index[s]
@@ -47,7 +47,7 @@ def predict(batch, net, langs, max_length, eval_type='max', out_mask_allow=[]):
     all_decoder_outputs = torch.zeros((m, max_length), dtype=torch.long, device=DEVICE)
     # all_decoder_outputs = all_decoder_outputs.to(device=DEVICE)
     for t in range(max_length):
-        decoder_output = net.decode(z_padded, memory, memory_padding_mask)
+        decoder_output = model.decode(z_padded, memory, memory_padding_mask)
             # decoder_output is b*nq x (t+1) x output_size
         decoder_output = decoder_output[:,-1] # get the last step's output (batch_size x output_size)
         if use_mask: decoder_output += additive_out_mask
@@ -71,39 +71,39 @@ def predict(batch, net, langs, max_length, eval_type='max', out_mask_allow=[]):
     return yq_predict
 
 
-def evaluate_ll(dataloader: torch.utils.data.DataLoader, net, langs, loss_fn=[], p_lapse=0.0):
+def evaluate_ll(dataloader: torch.utils.data.DataLoader, model, langs, loss_fn=[], p_lapse=0.0):
     # Evaluate the total (sum) log-likelihood across the entire validation set
     # 
     # Input
     #   dataloader: A torch.utils.DataLoader that represents validation/ test set.
-    #   net : MLC model
+    #   model : MLC model
     #   langs : dict of dat.Lang classes
     #   p_lapse : (default 0.) combine decoder outputs (prob 1-p_lapse) as mixture with uniform distribution (prob p_lapse)
-    net.eval()
+    model.eval()
     total_N = 0
     total_ll = 0
     if not loss_fn: loss_fn = torch.nn.CrossEntropyLoss(ignore_index=langs['output'].PAD_idx)
     with torch.no_grad():
         for batch in dataloader:
-            dict_loss = batch_ll(batch, net, loss_fn, langs, p_lapse=p_lapse)
+            dict_loss = batch_ll(batch, model, loss_fn, langs, p_lapse=p_lapse)
             total_ll += dict_loss['ll']
             total_N += dict_loss['N']
     return total_ll, total_N
 
 
-def batch_ll(batch, net, loss_fn, langs, p_lapse=0.0):
+def batch_ll(batch, model, loss_fn, langs, p_lapse=0.0):
     # Evaluate log-likelihood (average over cells, and sum total) for a given batch
     #
     # Input
     #   batch : from dat.make_biml_batch
     #   loss_fn : loss function
     #   langs : dict of dat.Lang classes
-    net.eval()
+    model.eval()
     target_batches = batch['yq_padded'] # b*nq x max_length
     target_lengths = batch['yq_lengths'] # list of size b*nq
     # Shifted targets with padding (added SOS symbol at beginning and removed EOS symbol) 
     target_shift = batch['yq_sos_padded'] # b*nq x max_length
-    decoder_output = net(target_shift, batch) # b*nq x max_length x output_size    
+    decoder_output = model(target_shift, batch) # b*nq x max_length x output_size    
 
     logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch*max_len, output_size)
     if p_lapse > 0:
@@ -117,12 +117,12 @@ def batch_ll(batch, net, loss_fn, langs, p_lapse=0.0):
     return dict_loss
 
 
-def evaluate_predictions(dataloader: torch.utils.data.DataLoader, net, max_length: int, eval_type='max') -> tuple:
+def evaluate_predictions(dataloader: torch.utils.data.DataLoader, model, max_length: int, eval_type='max') -> tuple:
     """Evaluates whether model predictions exactly match the solutions across entire data set.
 
     Args:
         dataloader (torch.DataLoader): dataloader build from datasets.LetterStringDataset
-        net (model.MLC): MLC model
+        model (model.MLC): MLC model
         max_length (int): maximum output length for each problem
         eval_type (str, optional): "max": take the maximum token of the logits, "sample" sample from the logit distribution. Defaults to 'max'.
 
@@ -130,12 +130,12 @@ def evaluate_predictions(dataloader: torch.utils.data.DataLoader, net, max_lengt
         tuple: A tuple of a lists of scores (True/False) and transformation types (successor, sort, etc.) for each problem.
     """
     
-    net.eval()
+    model.eval()
     scores = []
     transformation_types = []
     with torch.no_grad():
         for batch in tqdm(dataloader): # each batch
-            predictions = predict(batch, net, dataloader.dataset.langs, max_length, eval_type=eval_type)
+            predictions = predict(batch, model, dataloader.dataset.langs, max_length, eval_type=eval_type)
             batch_scores = [pred==yq for pred, yq in zip(predictions, batch["yq"])]
             scores += batch_scores
             transformation_types += batch["transformation"]

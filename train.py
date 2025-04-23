@@ -17,12 +17,12 @@ import checkpoint
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def train(batch: defaultdict, net: MLC, loss_fn, optimizer) -> float:
+def train(batch: defaultdict, model: MLC, loss_fn, optimizer) -> float:
     """Train MLC model on a batch of letter-string problems.
 
     Args:
         batch (defaultdict): A dictionary that represents a batch of letter-string problems.
-        net (MLC): MLC seq2seq encoder-decoder.
+        model (MLC): MLC seq2seq encoder-decoder.
         loss_fn (_type_): loss function (typically torch.nn.CrossEntropyLoss)
         optimizer (_type_): optimizer (typically torch.optim.adamw)
 
@@ -30,12 +30,12 @@ def train(batch: defaultdict, net: MLC, loss_fn, optimizer) -> float:
         float: The mean loss of the model predictions for this batch.
     """
     optimizer.zero_grad()
-    net.train()
+    model.train()
     target_batches = batch['yq_padded'] # (batch_size, max_target_length + 1)
     # shifted targets with padding (added SOS symbol at beginning and removed EOS symbol) 
     target_shifted_right = batch['yq_sos_padded'] # (batch_size, max_target_length + 1)
     # forward pass through MLC
-    decoder_output = net(target_shifted_right, batch) # (batch_size, max_target_length + 1, n_symbols)
+    decoder_output = model(target_shifted_right, batch) # (batch_size, max_target_length + 1, n_symbols)
     # flatten first two dimensions to pass to loss function:
     logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch_size * max_target_length + 1, output_size)
     loss = loss_fn(logits_flat, target_batches.reshape(-1))
@@ -83,9 +83,9 @@ def main():
             train_dataloader, val_dataloader = cp.load_dataloaders()
 
             loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
-            optimizer = torch.optim.AdamW(net.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
+            optimizer = torch.optim.AdamW(model.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
             
-    else: # training a new model (not resuming)
+    else: # training a new model
         # initialize datasets and dataloaders:
         D_train = dat.LetterStringDataset(data_dir="data", mode="train")
         train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
@@ -94,7 +94,7 @@ def main():
         val_dataloader = DataLoader(D_val, batch_size=5000, collate_fn=D_val.collate_fn)
 
         # setup model:
-        net = MLC(
+        model = MLC(
             hidden_size=args.emb_size, 
             input_size=D_train.langs['input'].n_symbols, 
             output_size=D_train.langs['output'].n_symbols,
@@ -106,12 +106,12 @@ def main():
             activation= args.act,
             ff_mult=args.ff_mult
         )
-        net = net.to(device=DEVICE)
-        print(net)
+        model = model.to(device=DEVICE)
+        print(model)
 
         # setup loss function and optimizer:
         loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
-        optimizer = torch.optim.AdamW(net.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
+        optimizer = torch.optim.AdamW(model.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
 
         if args.lr_warmup:
             print('    with LR warmup ON (1st epoch)')
@@ -144,7 +144,7 @@ def main():
         print("Epoch",epoch,"\n-------------------------------")
 
         for train_batch in train_dataloader:
-            loss = train(train_batch, net, loss_fn, optimizer)
+            loss = train(train_batch, model, loss_fn, optimizer)
             avg_train_loss += loss
             counter += 1
             step += 1  
@@ -156,7 +156,7 @@ def main():
                                         step, float(step) / float(nsteps_estimate) * 100., mylr, avg_train_loss/counter), end='')
                 
                 # compute validation loss
-                total_ll, total_N = evaluate_ll(val_dataloader, net, D_val.langs, loss_fn=loss_fn)
+                total_ll, total_N = evaluate_ll(val_dataloader, model, D_val.langs, loss_fn=loss_fn)
                 val_loss = -total_ll / total_N
                 print('ValLoss: {:.4f}'.format(val_loss))
                 mytracker['val_loss'] = val_loss
@@ -164,7 +164,7 @@ def main():
                 # save new best model if specified and val_loss is the lowest:
                 if args.save_best and val_loss < best_val_loss and (epoch > args.nepochs * args.save_best_skip):
                     best_val_loss = val_loss
-                    checkpoint.save(model_save_path,step,epoch,net,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state,is_best=True)
+                    checkpoint.save(model_save_path,step,epoch,model,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state,is_best=True)
                 
                 # update best validation loss
                 best_val_loss = val_loss if val_loss < best_val_loss else best_val_loss
@@ -179,7 +179,7 @@ def main():
         
 
         # after each epoch, calculate and save val accuracy:
-        scores, trans_types = evaluate_predictions(val_dataloader, net, max_length=20, eval_type="max")
+        scores, trans_types = evaluate_predictions(val_dataloader, model, max_length=20, eval_type="max")
         val_accuracy = dict()
         val_accuracy["epoch"] = epoch
         val_accuracy["overall"] = np.mean(scores)
@@ -191,7 +191,7 @@ def main():
         # after each epoch, adjust the general learning rate
         if epoch>1 or not args.lr_warmup: 
             scheduler_epoch.step()
-        checkpoint.save(model_save_path,step,epoch,net,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state)
+        checkpoint.save(model_save_path,step,epoch,model,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state)
     print('Training complete.')
 
 
