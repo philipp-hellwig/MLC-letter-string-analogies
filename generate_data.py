@@ -1,11 +1,36 @@
 from copy import deepcopy
 import string
 import random
+import functools
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+#####################################################################################################################
+#  Transformations present in both data splits
+# 1.	Extend Sequence (a b c d -> a b c d e)
+# 2.	Successor (a b c d -> a b c e)
+# 3.	Predecessor (b c d e -> a c d e)
+# 4.	Remove Redundant letter (a b b c d -> a b c d)
+# 5.	Fix alphabetic sequence (a b c w e -> a b c d e)
+# 6.	Sort (a d c b e -> a b c d e)
+# 7.	Sort + Group (aa dd cc bb ee -> aa bb cc dd ee)
+# 8.	Remove redundant + Interleave (a x b x b x c x d -> a x b x c x d)
+# 9.	Remove Redundant + successor (a b b c d -> a b c e)
+# 10.	Fix alphabetic sequence + extend sequence (a b c w e -> a b c d e)
+
+# Transformations only present in validation split:
+# 11.	Remove Redundant + Sort (a d d c b e -> a b c d e)
+# 12.	Extend Sequence + Predecessor (b c d e -> a c d e f)
+# 13.	Fix alphabetic sequence + Interleave (a f b f c f w f e -> a f b f c f d f e)
+# 14.	Extend sequence + Group (aa bb cc dd -> aa bb cc dd ee)
+# 15.	Extend Sequence + Extend Sequence + Successor (a b c d -> a b c d e g)
+# 16.	Fix alphabetic Sequence + Predecessor + Successor (a b c w e -> a a c d f)
+# 17.	Reverse (a b c d -> d c b a)
+# 18.	Shift (a b c d -> e f g h)
+# 19.	Replicate (a b c d -> a b c d a b c d)
+#####################################################################################################################
 
 # Generate derangement
 def k_derange(k, letters):
@@ -77,6 +102,40 @@ def apply_sort(prob_letters, *args):
     prob_swapped[i_loc] = j_letter
     prob_swapped[j_loc] = i_letter
     return [prob_swapped, prob_letters]
+
+# group
+def group_problem(problem: list, k: int=None, *args):
+    """Transform problem by repeating each letter k times.
+
+    Args:
+        problem (list): [[source],[transformation]]
+        k (int): how many times to repeat each letter
+    """
+    p = deepcopy(problem)
+    if k is None:
+        k = np.random.randint(1,4)
+    source = list(np.repeat(p[0], k))
+    trans = list(np.repeat(p[1], k))
+    return [source, trans]
+
+# interleave
+def interleave_problem(problem: list, alphabet: list, interleaver: str=None):
+    if interleaver is None:
+        interleaver = np.random.choice(alphabet)
+    source = []
+    for i, letter in enumerate(problem[0]):
+        source.append(letter)
+        if i < (len(problem[0])-1):
+            source.append(interleaver)
+    trans = []
+    for i, letter in enumerate(problem[1]):
+        trans.append(letter)
+        if i < (len(problem[1])-1):
+            trans.append(interleaver)
+    return [source, trans]
+
+def compose(*functions):
+    return functools.reduce(lambda f, g: lambda x: g(f(x)), functions)
 
 
 def generate_dataset(
@@ -160,40 +219,14 @@ def dataset_to_disk(
     print(f"Done. {max_train_id} training samples and {rows - max_train_id} validation samples written to disk.")
 
 
-def dataset_to_disk_batched(
-        dataset: pd.DataFrame, 
-        directory="data", 
-        batch_size: int=20, 
-        train_ratio: float=0.9
-        ) -> None:
-    
-    """Write dataset to batched .csv files.
-
-    Args:
-        dataset (dict): dictionary generated from generate_dataset function. 
-        directory (str): directory where the dataset should be saved. Defaults to "data".
-        batch_size (int, optional): Specifies how many queries should be in each batch. Defaults to 20.
-        train_ratio (float, optional): Proportion of batches allocated to train folder. Defaults to 0.9 (number should be between 0 and 1).
-    """
-    # shuffle dataset:
-    dataset = dataset.sample(frac=1).reset_index(drop=True)
-    rows = dataset.shape[0]
-    file_id = 1
-    num_train_samples = round(train_ratio * rows)
-    print("Writing to .csv files...")
-    for i in tqdm(range(0, rows, batch_size)):
-        # set subdirectory:
-        if i <= num_train_samples:
-            subdir= "train"
-        else:
-            subdir= "val"
-        batch = dataset.iloc[i:i+batch_size, :]
-        batch.to_csv(f"{directory}/{subdir}/{str(file_id).zfill(len(str(rows//batch_size)))}.csv", index=False)
-        file_id += 1
-    
-    print(f"Done.")
-
-
 if __name__ == "__main__":
-    dataset = generate_dataset(n_reshuffle=50)
-    dataset_to_disk(dataset)
+    # dataset = generate_dataset(n_reshuffle=50)
+    # dataset_to_disk(dataset)
+    import string
+    problem = [["a", "b", "c"],["a", "b", "d"]]
+    print(f"{problem=}")
+    group = group_problem(problem, 2)
+    print(f"{group=}")
+
+    interleave = interleave_problem(problem, list(string.ascii_lowercase))
+    print(f"{interleave=}")
