@@ -1,13 +1,18 @@
+import argparse
 from copy import deepcopy
-import string
 import random
-import functools
+import string
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
-#####################################################################################################################
+
+# TODO: Should we let predecessor problems spill over? i.e., a b c d -> z b c d
+# ---------------------------------------------------------------------------------------------
+#                                  Overview of Transformations
+# ---------------------------------------------------------------------------------------------
+# Each problem function returns a list of length 2 [source sequence, transformation]
+#
 #  Transformations present in both data splits
 # 1.	Extend Sequence (a b c d -> a b c d e)
 # 2.	Successor (a b c d -> a b c e)
@@ -18,56 +23,49 @@ from tqdm import tqdm
 # 7.	Sort + Group (aa dd cc bb ee -> aa bb cc dd ee)
 # 8.	Remove redundant + Interleave (a x b x b x c x d -> a x b x c x d)
 # 9.	Remove Redundant + successor (a b b c d -> a b c e)
-# 10.	Fix alphabetic sequence + extend sequence (a b c w e -> a b c d e)
-
-# Transformations only present in validation split:
-# 11.	Remove Redundant + Sort (a d d c b e -> a b c d e)
-# 12.	Extend Sequence + Predecessor (b c d e -> a c d e f)
-# 13.	Fix alphabetic sequence + Interleave (a f b f c f w f e -> a f b f c f d f e)
-# 14.	Extend sequence + Group (aa bb cc dd -> aa bb cc dd ee)
-# 15.	Extend Sequence + Extend Sequence + Successor (a b c d -> a b c d e g)
-# 16.	Fix alphabetic Sequence + Predecessor + Successor (a b c w e -> a a c d f)
-# 17.	Reverse (a b c d -> d c b a)
-# 18.	Shift (a b c d -> e f g h)
-# 19.	Replicate (a b c d -> a b c d a b c d)
-#####################################################################################################################
-
-# Generate derangement
-def k_derange(k, letters):
-    if k == 1:
-        return None, None, letters
-    
-    to_shuffle = sorted(random.sample(range(len(letters)), k=k))
-    shuffled = random.sample(to_shuffle, k=len(to_shuffle))
-
-    # number of letters that have not been shuffled
-    not_derangement = sum([i == shuffled[to_shuffle.index(i)] for i in to_shuffle])
-
-    # repeat until shuffled
-    while not_derangement:
-        shuffled = random.sample(to_shuffle, k=len(to_shuffle))
-        not_derangement = sum([i == shuffled[to_shuffle.index(i)] for i in to_shuffle])
-    shuffled_alphabet = [letters[i] if i not in to_shuffle else letters[shuffled[to_shuffle.index(i)]] for i in range(len(letters))]
-    return to_shuffle, [letters[i] for i in shuffled], shuffled_alphabet
+# 10.	Fix alphabetic sequence + extend sequence (a b c w -> a b c d e)
+#
+# Transformations only present in validation/ test splits:
+# 11. Remove Redundant + Sort (a d d c b e -> a b c d e)
+# 12. Extend Sequence + Predecessor (b c d e -> a c d e f)
+# 13. Fix alphabetic sequence + Interleave (a f b f c f w f e -> a f b f c f d f e)
+# 14. Extend sequence + Group (aa bb cc dd -> aa bb cc dd ee)
+# 15. Extend Sequence + Extend Sequence + Successor (a b c d -> a b c d e g)
+# 16. Fix alphabetic Sequence + Predecessor + Successor (a b c w e -> a a c d f)
+# 17. Reverse (a b c d -> d c b a)
+# 18. Shift (a b c d -> e f g h)
+# 19. Replicate (a b c d -> a b c d a b c d)
+# ---------------------------------------------------------------------------------------------
 
 
-# Successor transformation
-def apply_succ(prob_letters, *args):
-    return [prob_letters[:-1], prob_letters[:-2] + [prob_letters[-1]]]
+# 1. Append letter to sequence
+def extend_sequence(prob_letters, alphabet, *args):
+    idx_last = alphabet.index(prob_letters[-1])
+    if idx_last == (len(alphabet)-1):
+        raise IndexError("Letter can't be added to a sequence ends with the last letter of the alphabet!")
+    return [prob_letters, prob_letters + [alphabet[idx_last+1]]]
 
 
-# Predecessor transformation
-def apply_pred(prob_letters, *args):
-    return [prob_letters[1:], [prob_letters[0]] + prob_letters[2:]]
+# 2 Successor transformation
+def succ(prob_letters, alphabet, *args):
+    # find index in alphabet of last problem letter
+    idx_last = alphabet.index(prob_letters[-1])
+    if idx_last == (len(alphabet)-1):
+        raise IndexError("Successor transformation cannot be applied to a problem that ends with the last letter of the alphabet!")
+    return [prob_letters, prob_letters[:-1] + [alphabet[idx_last+1]]]
 
 
-# Add letter to sequence
-def apply_add_letter(prob_letters, *args):
-    return [prob_letters[:-1], prob_letters]
+# 3 Predecessor transformation
+def pred(prob_letters, alphabet, *args):
+    # find index in alphabet of first problem letter
+    idx_first = alphabet.index(prob_letters[0])
+    if idx_first == (len(alphabet)-1):
+        raise IndexError("Predecessor transformation cannot be applied to a problem that starts with the first letter of the alphabet!")
+    return [prob_letters, [alphabet[idx_first-1]] + prob_letters[1:]]
 
 
-# Remove redundant letter
-def apply_remove_redundant(prob_letters, *args):
+# 4 Remove redundant letter
+def remove_redundant(prob_letters, *args):
     redundant_loc = np.arange(len(prob_letters))
     np.random.shuffle(redundant_loc)
     redundant_loc = redundant_loc[0]
@@ -76,9 +74,9 @@ def apply_remove_redundant(prob_letters, *args):
     return [prob_redundant, prob_letters]
 
 
-# Remove out-of-place character
-def apply_fix_alphabet(prob_letters, letters, *args):
-    remaining_letters = np.array(deepcopy(letters))
+# 5 Remove out-of-place character
+def fix_alphabetic_seq(prob_letters, alphabet, *args):
+    remaining_letters = np.array(deepcopy(alphabet))
     remaining_letters = remaining_letters[np.all(np.expand_dims(np.array(remaining_letters),1) != np.expand_dims(np.array(prob_letters),0), 1)]
     np.random.shuffle(remaining_letters)
     insert_letter = remaining_letters[0]
@@ -90,8 +88,8 @@ def apply_fix_alphabet(prob_letters, letters, *args):
     return [prob_letters_insert, prob_letters]
 
 
-# Sort letters
-def apply_sort(prob_letters, *args):
+# 6 Sort letters
+def sort(prob_letters, *args):
     swap_loc = np.arange(len(prob_letters))
     np.random.shuffle(swap_loc)
     i_loc = swap_loc[0]
@@ -103,7 +101,8 @@ def apply_sort(prob_letters, *args):
     prob_swapped[j_loc] = i_letter
     return [prob_swapped, prob_letters]
 
-# group
+
+# group a problem and its solution by duplicating each letter k times
 def group_problem(problem: list, k: int=None, *args):
     """Transform problem by repeating each letter k times.
 
@@ -113,12 +112,13 @@ def group_problem(problem: list, k: int=None, *args):
     """
     p = deepcopy(problem)
     if k is None:
-        k = np.random.randint(1,4)
+        k = np.random.randint(2,4)
     source = list(np.repeat(p[0], k))
     trans = list(np.repeat(p[1], k))
     return [source, trans]
 
-# interleave
+
+# interleave a problem and its solution
 def interleave_problem(problem: list, alphabet: list, interleaver: str=None):
     if interleaver is None:
         interleaver = np.random.choice(alphabet)
@@ -134,23 +134,130 @@ def interleave_problem(problem: list, alphabet: list, interleaver: str=None):
             trans.append(interleaver)
     return [source, trans]
 
-def compose(*functions):
-    return functools.reduce(lambda f, g: lambda x: g(f(x)), functions)
+
+# 7. sort and group
+def sort_group(prob_letters, *args):
+    return group_problem(sort(prob_letters))
+
+
+# 8. remove redundant, interleave
+def rr_interleave(prob_letters, *args):
+    return interleave_problem(remove_redundant(prob_letters), *args)
+
+
+# 9. Remove Redundant + successor (a b b c d -> a b c e)
+def rr_succ(prob_letters, *args):
+    redundant_prob = remove_redundant(prob_letters)
+    succ_prob = succ(redundant_prob[1], *args)
+    return [redundant_prob[0], succ_prob[1]]
+
+
+# 10. Fix alphabetic sequence + extend sequence (a b c w -> a b c d -> a b c d e)
+def fix_extend(prob_letters, *args):
+    fix_seq = fix_alphabetic_seq(prob_letters, *args)
+    extend_seq = extend_sequence(fix_seq[1], *args)
+    return [fix_seq[0], extend_seq[1]]
+
+
+# 11. Remove Redundant + Sort (a d d c b e -> a b c d e)
+def rr_sort(prob_letters, *args):
+    redundant_prob = remove_redundant(prob_letters)
+    sort_prob = sort(redundant_prob[0], *args)
+    return [sort_prob[0], redundant_prob[1]]
+
+
+# 12. Extend Sequence + Predecessor (b c d e -> a c d e f)
+def extend_pred(prob_letters, *args):
+    return [prob_letters, pred(extend_sequence(prob_letters, *args)[1], *args)[1]]
+
+
+# 13. Fix alphabetic sequence + Interleave (a f b f c f w f e -> a f b f c f d f e)
+def fix_interleave(prob_letters, *args):
+    return interleave_problem(fix_alphabetic_seq(prob_letters, *args), *args)
+
+
+# 14. Extend sequence + Group (aa bb cc dd -> aa bb cc dd ee)
+def extend_group(prob_letters, *args):
+    return group_problem(extend_sequence(prob_letters, *args))
+
+
+# 15. Extend Sequence + Extend Sequence + Successor (a b c d -> a b c d e g)
+def extend_extend_succ(prob_letters, *args):
+    trans = succ(extend_sequence(extend_sequence(prob_letters, *args)[1], *args)[1], *args)[1]
+    return [prob_letters, trans]
+
+
+# 16. Fix alphabetic Sequence + Predecessor + Successor (a b c w e -> a a c d f)
+def fix_pred_succ(prob_letters, *args):
+    source = fix_alphabetic_seq(prob_letters, *args)[0]
+    trans = succ(pred(source, *args)[1], *args)[1]
+    return [source, trans]
+
+
+# 17. Reverse (a b c d -> d c b a)
+def reverse(prob_letters, *args):
+    return [prob_letters, [letter for letter in reversed(prob_letters)]]
+
+
+# 18. Shift (a b c d -> e f g h)
+def shift(prob_letters, *args):
+    idx_last = alphabet.index(prob_letters[-1])
+    if idx_last == (len(alphabet)-1-len(prob_letters)):
+        raise IndexError("Sequence is too close to the end of the alphabet to be shifted")
+    return [prob_letters, alphabet[idx_last+1:idx_last+1+len(prob_letters)]]
+
+
+# 19. Replicate (a b c d -> a b c d a b c d)
+def replicate(prob_letters, *args):
+    return [prob_letters, list(np.tile(prob_letters, 2))]
+
+# permute alphabet
+def k_derange(k, alphabet):
+    if k == 1:
+        return None, None, alphabet
+    
+    to_shuffle = sorted(random.sample(range(len(alphabet)), k=k))
+    shuffled = random.sample(to_shuffle, k=len(to_shuffle))
+
+    # number of letters that have not been shuffled
+    not_derangement = sum([i == shuffled[to_shuffle.index(i)] for i in to_shuffle])
+
+    # repeat until shuffled
+    while not_derangement:
+        shuffled = random.sample(to_shuffle, k=len(to_shuffle))
+        not_derangement = sum([i == shuffled[to_shuffle.index(i)] for i in to_shuffle])
+    shuffled_alphabet = [alphabet[i] if i not in to_shuffle else alphabet[shuffled[to_shuffle.index(i)]] for i in range(len(alphabet))]
+    return to_shuffle, [alphabet[i] for i in shuffled], shuffled_alphabet
+
+
+ALL_TRANSFORMATIONS = {
+    'extend_seq' : extend_sequence,
+    'succ' : succ,
+    'pred' : pred,
+    'remove_redundant' : remove_redundant,
+    'fix_alphabet' : fix_alphabetic_seq,
+    'sort' : sort,
+    "sort_group" : sort_group,
+    "rr_interleave" : rr_interleave,
+    "rr_succ" : rr_succ,
+    "fix_extend" : fix_extend,
+    "rr_sort" : rr_sort,
+    "extend_pred" : extend_pred,
+    "fix_interleave" : fix_interleave,
+    "extend_group": extend_group,
+    "extend_extend_succ": extend_extend_succ,
+    "fix_pred_succ": fix_pred_succ,
+    "reverse" : reverse,
+    "shift" : shift,
+    "replicate" : replicate,
+}
 
 
 def generate_dataset(
-        alphabet_permutations=[1, 2, 5, 10, 20], 
-        prob_lengths=[2,3,4,5,6],
-        transformations={
-            'succ' : apply_succ,
-            'pred' : apply_pred,
-            'add_letter' : apply_add_letter,
-            'remove_redundant' : apply_remove_redundant,
-            'fix_alphabet' : apply_fix_alphabet,
-            'sort' : apply_sort
-        },
-        n_examples=1,
-        n_reshuffle=50
+        alphabet_permutations: list=[1, 2, 5, 10, 20], 
+        prob_lengths: list=[2,3,4,5,6],
+        transformations=ALL_TRANSFORMATIONS,
+        n_reshuffle: int=50
         ) -> pd.DataFrame:
     
     """Generate a dataset of letter string analogies and save them to train and val folders.
@@ -171,8 +278,6 @@ def generate_dataset(
     cols = ["n_perm", "alphabet", "transformation", "query"] #+ ["study" + str(i) for i in range(1, n_study+1)]
     dataset = pd.DataFrame(columns=cols)
     for n_perm in alphabet_permutations:
-        queries_by_trans = {name: [] for name in transformations.keys()}
-
         # permute alphabet:
         _, _, alphabet = k_derange(n_perm, list(string.ascii_lowercase))
         alph_string = " ".join(alphabet)
@@ -220,13 +325,22 @@ def dataset_to_disk(
 
 
 if __name__ == "__main__":
-    # dataset = generate_dataset(n_reshuffle=50)
-    # dataset_to_disk(dataset)
-    import string
-    problem = [["a", "b", "c"],["a", "b", "d"]]
-    print(f"{problem=}")
-    group = group_problem(problem, 2)
-    print(f"{group=}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--illustrate', default=False, help='Instead of generating data, illustrate each letter string analogy with an example.')
+    args = parser.parse_args()
+    
+    # set seed for reproducibility:
+    np.random.seed(1)
 
-    interleave = interleave_problem(problem, list(string.ascii_lowercase))
-    print(f"{interleave=}")
+    if args.illustrate:
+        alphabet = list(string.ascii_lowercase)
+        problem_letters = alphabet[2:6]
+        print("Example analogy problems with alphabet:")
+        print(alphabet, "\n")
+        for i, trans in enumerate(ALL_TRANSFORMATIONS, start=1):
+            print(f"{i}. '{trans}':")
+            problem = ALL_TRANSFORMATIONS[trans](problem_letters, alphabet)
+            print(problem, "\n")
+    else:
+        dataset = generate_dataset(n_reshuffle=50)
+        dataset_to_disk(dataset)

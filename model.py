@@ -38,20 +38,8 @@ class MLC(nn.Module):
     def __init__(self, hidden_size: int, input_size: int, output_size: int, PAD_idx_input: int, PAD_idx_output: int,
         nlayers_encoder: int=5, nlayers_decoder: int=3, nhead: int=8,
         dropout_p: float=0.1, ff_mult: int=4, activation='gelu'):
-        #
-        # Input        
-        #  hidden_size : embedding size
-        #  input_size  : number of input symbols
-        #  output_size : number of output symbols
-        #  PAD_idx_input : index of padding in input sequences
-        #  PAD_idx_output : index of padding in output sequences
-        #  nlayers_encoder : number of transformer encoder layers
-        #  nlayers_decoder : number of transformer decoder layers
-        #  nhead : number of heads for multi-head attention
-        #  dropout_p : dropout applied to symbol embeddings and transformer layers
-        #  ff_mult : multiplier for hidden size of feedforward network
-        #  activation: string either 'gelu' or 'relu'
-          
+        """Initialize an MLC encoder-decoder model."""
+
         super(MLC, self).__init__()
         assert activation in ['gelu','relu']        
         self.hidden_size = hidden_size

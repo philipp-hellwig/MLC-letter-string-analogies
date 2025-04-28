@@ -90,7 +90,6 @@ class LetterStringDataset(Dataset):
         # split query into query xq and target yq
         self.data[["xq","yq"]] = self.data["query"].str.split(">", expand=True)
         self.data["xq"] = self.data["xq"].str.strip()
-        self.data["yq"] = self.data["yq"].str.strip().str.split(" ")
         # create context:
         sos = self.langs["input"].index2symbol[self.langs["input"].SOS_idx]
         io = self.langs["input"].index2symbol[self.langs["input"].IN_OUT_idx]
@@ -99,6 +98,9 @@ class LetterStringDataset(Dataset):
         self.data["xq_context"] = self.data["xq_context"].str.replace(">", io)
         self.data["xq_context"] = self.data["xq_context"].str.split(" ")
         self.data["yq_lengths"] = self.data["yq"].apply(lambda x: len(x))
+        
+        self.data["xq"] = self.data["xq"].str.split(" ")
+        self.data["yq"] = self.data["yq"].str.strip().str.split(" ")
         # create tensors
         self.data["xq_context_tensor"] = self.data["xq_context"].apply(lambda x: self.langs["input"].symbols_to_tensor(x))
         self.data["yq_tensor"] = self.data["yq"].apply(lambda x: self.langs["output"].symbols_to_tensor(x))

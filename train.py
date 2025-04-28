@@ -34,8 +34,12 @@ def train(batch: defaultdict, model: MLC, loss_fn, optimizer) -> float:
     target_batches = batch['yq_padded'] # (batch_size, max_target_length + 1)
     # shifted targets with padding (added SOS symbol at beginning and removed EOS symbol) 
     target_shifted_right = batch['yq_sos_padded'] # (batch_size, max_target_length + 1)
-    # forward pass through MLC
-    decoder_output = model(target_shifted_right, batch) # (batch_size, max_target_length + 1, n_symbols)
+    # forward pass through MLC model
+    if DEVICE == "cuda":
+        with torch.autocast(device_type=DEVICE, dtype=torch.bfloat16):
+            decoder_output = model(target_shifted_right, batch) # returns (batch_size, max_target_length + 1, n_symbols)
+    else:
+        decoder_output = model(target_shifted_right, batch) # returns (batch_size, max_target_length + 1, n_symbols)
     # flatten first two dimensions to pass to loss function:
     logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch_size * max_target_length + 1, output_size)
     loss = loss_fn(logits_flat, target_batches.reshape(-1))
@@ -135,10 +139,9 @@ def main():
     params_state = {'langs': D_train.langs, 'emb_size':args.emb_size, 'input_size':D_train.langs['input'].n_symbols, 'output_size':D_train.langs['output'].n_symbols,
                     'dropout':args.dropout, 'nlayers_encoder':args.nlayers_encoder, 'nlayers_decoder':args.nlayers_decoder,
                     'nepochs':args.nepochs, 'batch_size':args.batch_size, 'activation':"gelu", 'args':args}
-        
-    start = time.time()
-    
+
     print(f"Training on {DEVICE}.")
+    start = time.time()
     # training loop:
     for epoch in range(epoch_start,args.nepochs+1):
         print("Epoch",epoch,"\n-------------------------------")
