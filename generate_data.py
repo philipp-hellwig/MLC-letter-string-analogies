@@ -10,7 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 
 
-# TODO: Should we let predecessor problems spill over? i.e., a b c d -> z b c d
+# TODO: Should we let predecessor and successor problems spill over? e.g., a b c d -> z b c d or x y z -> x y a
 # ---------------------------------------------------------------------------------------------
 #                                  Overview of Transformations
 # ---------------------------------------------------------------------------------------------
@@ -385,6 +385,7 @@ def main():
     parser.add_argument('--illustrate', default=False, type=bool, help='Instead of generating data, illustrate each letter string analogy with an example.')
     parser.add_argument('--transformations', default="all", type=str, required=True, help='Comma-separated list of integers of transformations to include (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
     parser.add_argument('--data_dir', default="data", help='The directory in which the data set will be saved')
+    parser.add_argument('--n_reshuffle', default=50, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 50.')
     args = parser.parse_args()
     
     # set seed for reproducibility:
@@ -406,7 +407,7 @@ def main():
             func_ids = [int(id) for id in args.transformations.split(',')]
             transformations = {id: ALL_TRANSFORMATIONS[id] for id in func_ids}
         
-        dataset = generate_dataset(transformations=transformations, n_reshuffle=50)
+        dataset = generate_dataset(transformations=transformations, n_reshuffle=args.n_reshuffle)
         # create directory if it doesnt exist yet
         if not os.path.exists(args.data_dir):
             os.makedirs(args.data_dir)

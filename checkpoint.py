@@ -1,5 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
+import torch.optim
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -10,30 +11,39 @@ import datasets as dat
 
 class CheckPoint:
     def __init__(self, path: str, device: torch.device):
-        self.checkpoint = torch.load(path, map_location=device)
-        self.train_data = pd.DataFrame(self.checkpoint["train_tracker"])
+        self.checkpoint = torch.load(path, map_location=device, weights_only=False)
+        self.train_stats = pd.DataFrame(self.checkpoint["train_tracker"])
         self.device = device
+        self.args = vars(self.checkpoint["args"])
     
-    def plot_learning_rate(self, ax) -> plt.Axes:
-        lr_plot = sns.lineplot(data=self.train_data, x="step", y="lr", ax=ax)
-        return lr_plot
+    def check_compatibility(self, command_line_args):
+        for (saved_key, saved_value), (current_key, current_value) in zip(vars(self.checkpoint["args"]).items(), vars(command_line_args).items()):
+            if saved_key != "resume":
+                assert saved_value==current_value, f"Saved argument ({saved_key}={saved_value}) and current argument({current_key}={current_value}) mismatch! Failed to load model."
+        return True
 
-    def plot_loss(self, ax) -> plt.Axes:
-        loss_data = pd.melt(self.train_data, id_vars=['step'], value_vars=['avg_train_loss','val_loss'], var_name="loss")
-        loss_data["loss"] = loss_data["loss"].str.replace("_loss", "")
-        loss_plot = sns.lineplot(data=loss_data, x='step', y='value', hue='loss', ax=ax)
-        return loss_plot
+    def load_dataloaders(self, data_dir="data", verbose: bool=True, val_batch_size=25) -> tuple:            
+        """Load and return train and validation DataLoaders"""
+        D_train = dat.LetterStringDataset(data_dir=data_dir, mode="train")
+        D_val = dat.LetterStringDataset(data_dir=data_dir, mode="val")
+        train_dataloader = DataLoader(D_train,batch_size=self.checkpoint["batch_size"], collate_fn=D_train.collate_fn)
+        val_dataloader = DataLoader(D_val,batch_size=val_batch_size, collate_fn=D_val.collate_fn)
+        if verbose:
+            print(f"Loading training ({len(D_train):,} samples) and validation ({len(D_val):,} samples) dataloaders.")
+        return (train_dataloader, val_dataloader)
+
+    def load_optimizer(self, model, optimizer_class=torch.optim.AdamW, **kwargs):
+        optimizer = optimizer_class(model.parameters(), lr=self.args["lr"], betas=(0.9,0.95), weight_decay=0.01, **kwargs)
+        optimizer.load_state_dict(self.checkpoint['optimizer_state_dict'])
+        return optimizer
+
+    def load_scheduler(self, optimizer, scheduler_class=torch.optim.lr_scheduler.LinearLR, **kwargs):
+        scheduler = scheduler_class(optimizer, start_factor=1.0, end_factor=self.args["lr_end_factor"], total_iters=self.args["nepochs"]-1)
+        scheduler.load_state_dict(self.checkpoint['scheduler_epoch_state_dict'])
+        return scheduler
     
     def load_model(self, verbose: bool=True) -> model.MLC:
-        """Load MLC model using a checkpoint file (.pt).
-
-        Args:
-            verbose(bool): whether or not to print model and training information
-
-        Returns:
-            model.MLC
-        """
-
+        """Load MLC model"""
         # Initialize model architecture:         
         net = model.MLC(
             hidden_size=self.checkpoint['emb_size'], 
@@ -50,7 +60,6 @@ class CheckPoint:
         nets_state_dict = self.checkpoint['nets_state_dict']
         net.load_state_dict(nets_state_dict)
         net = net.to(device=self.device)
-
         if verbose:
             best_val_loss = -float('inf')
             if 'best_val_loss' in self.checkpoint: best_val_loss = self.checkpoint['best_val_loss']
@@ -59,18 +68,26 @@ class CheckPoint:
             print(f"\tnumber of steps:{self.checkpoint['step']:,}")
             print('\tbest val loss achieved: {:.4f}'.format(best_val_loss))
             print(net)
-        
         return net
+
+    def resume_training(self, command_line_args):
+        if self.check_compatibility(command_line_args):
+            model = self.load_model()
+            optimizer = self.load_optimizer(model)
+            scheduler = self.load_scheduler(optimizer)
+            epoch = self.checkpoint['epoch'] + 1
+            step = self.checkpoint['step']
+            return model, optimizer, scheduler, epoch, step
     
-    def load_dataloaders(self, data_dir="data", verbose: bool=True, val_batch_size=25):            
-        # Load validation dataset
-        D_train = dat.LetterStringDataset(data_dir=data_dir, mode="train")
-        D_val = dat.LetterStringDataset(data_dir=data_dir, mode="val")
-        train_dataloader = DataLoader(D_train,batch_size=self.checkpoint["batch_size"], collate_fn=D_train.collate_fn)
-        val_dataloader = DataLoader(D_val,batch_size=val_batch_size, collate_fn=D_val.collate_fn)
-        if verbose:
-            print(f"Loading training ({len(D_train):,} samples) and validation ({len(D_val):,} samples) dataloaders.")
-        return (train_dataloader, val_dataloader)
+    def plot_learning_rate(self, ax) -> plt.Axes:
+        lr_plot = sns.lineplot(data=self.train_stats, x="step", y="lr", ax=ax)
+        return lr_plot
+
+    def plot_loss(self, ax) -> plt.Axes:
+        loss_data = pd.melt(self.train_stats, id_vars=['step'], value_vars=['avg_train_loss','val_loss'], var_name="loss")
+        loss_data["loss"] = loss_data["loss"].str.replace("_loss", "")
+        loss_plot = sns.lineplot(data=loss_data, x='step', y='value', hue='loss', ax=ax)
+        return loss_plot
 
 
 def save(fn_out_model, step, epoch, net, optimizer, scheduler_epoch, train_tracker, val_accuracies, best_val_loss, params, is_best=False):

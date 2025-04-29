@@ -73,23 +73,25 @@ def main():
 
     args = parser.parse_args()
     model_save_path = f"{args.dir_model}/{args.filename_model}"
-
+    
     if args.resume:
-            raise NotImplementedError("resume==True not supported yet")
-            # TODO check that run arguments are the same:
-            cp.check_compatibility()
-            # curr_args = vars(args)
-            # prev_args = vars(checkpoint['args'])
-            # for k in prev_args.keys():
-            #     if k!='resume': assert(prev_args[k]==curr_args[k]) # check that command line args match the checkpoint's
-            # for k in params.keys():
-            #     if k not in {'langs','args'}: assert(params[k]==checkpoint[k]) # check that hyperparams match the checkpoint's
-            cp = checkpoint.CheckPoint(path=model_save_path, device=DEVICE)
-            train_dataloader, val_dataloader = cp.load_dataloaders()
+        print("Attempting to resume training...")
+        cp = checkpoint.CheckPoint(path=model_save_path, device=DEVICE)
+        # load datasets
+        train_dataloader, val_dataloader = cp.load_dataloaders(data_dir=args.dir_data, val_batch_size=5000)
+        D_train = train_dataloader.dataset
+        D_val = val_dataloader.dataset
+        # setup loss function
+        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
+        # load model, optimizer, scheduler
+        model, optimizer, scheduler_epoch, epoch_start, step = cp.resume_training(args)
+        print(f"Successfully loaded parameters.\nResuming training at epoch {epoch_start}.")
+        # set training loop variables that have been recorded previously
+        best_val_loss = cp.checkpoint["best_val_loss"]
+        counter = 0 # num updates since the loss was last reported
+        train_tracker = cp.checkpoint["train_tracker"]
+        val_accuracy_by_epoch = cp.checkpoint["val_accuracy"]
 
-            loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
-            optimizer = torch.optim.AdamW(model.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
-            
     else: # training a new model
         # initialize datasets and dataloaders:
         D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train")
@@ -128,8 +130,6 @@ def main():
             print('    with LR warmup OFF')
             scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-1)
 
-        nsteps_estimate = math.ceil(args.nepochs*len(D_train)/args.batch_size)
-        avg_train_loss = 0.
         best_val_loss = float('inf')
         counter = 0 # num updates since the loss was last reported
         step = 0
@@ -137,6 +137,8 @@ def main():
         val_accuracy_by_epoch = []
         epoch_start = 1
 
+    nsteps_estimate = math.ceil(args.nepochs*len(D_train)/args.batch_size)
+    avg_train_loss = 0.
     # group args in dict for checkpoint saving:
     params_state = {'langs': D_train.langs, 'emb_size':args.emb_size, 'input_size':D_train.langs['input'].n_symbols, 'output_size':D_train.langs['output'].n_symbols,
                     'dropout':args.dropout, 'nlayers_encoder':args.nlayers_encoder, 'nlayers_decoder':args.nlayers_decoder,
