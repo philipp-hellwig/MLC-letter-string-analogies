@@ -105,7 +105,7 @@ class MLC(nn.Module):
         # 
         # Input
         #  z_padded : tensor of size [b*nq (batch_size), maxlen_target] : decoder input via token index
-        #  batch : struct via datasets.make_MLC_batch(), which includes source sequences
+        #  batch : batch generated from torch.DataLoader(LetterStringDataset)
         # 
         # Output
         #   output : [b*nq x maxlen_target x output_size]

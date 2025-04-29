@@ -55,6 +55,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filename_model', type=str, default='', help='*REQUIRED* Filename for saving model checkpoints. Typically ends in .pt')
     parser.add_argument('--dir_model', type=str, default='models', help='Directory for saving model files')
+    parser.add_argument('--dir_data', type=str, default='data', help='Directory for loading datasets')
     parser.add_argument('--batch_size', type=int, default=25, help='number of episodes per batch')
     parser.add_argument('--nepochs', type=int, default=50, help='number of training epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
@@ -91,12 +92,13 @@ def main():
             
     else: # training a new model
         # initialize datasets and dataloaders:
-        D_train = dat.LetterStringDataset(data_dir="data", mode="train")
+        D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train")
         train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
         
-        D_val = dat.LetterStringDataset(data_dir="data", mode="val")
+        D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val")
         val_dataloader = DataLoader(D_val, batch_size=5000, collate_fn=D_val.collate_fn)
-
+        
+        print(f"Training with datasets from directory {args.dir_data}")
         # setup model:
         model = MLC(
             hidden_size=args.emb_size, 
@@ -142,6 +144,7 @@ def main():
 
     print(f"Training on {DEVICE}.")
     start = time.time()
+    
     # training loop:
     for epoch in range(epoch_start,args.nepochs+1):
         print("Epoch",epoch,"\n-------------------------------")
@@ -174,13 +177,9 @@ def main():
                 avg_train_loss = 0.
                 counter = 0
                 train_tracker.append(mytracker)
-
-
             # if warm-up, adjust learning rate for each step of the first epoch
             if args.lr_warmup and epoch==1: 
-                scheduler_warmup.step()
-        
-
+                scheduler_warmup.step() 
         # after each epoch, calculate and save val accuracy:
         scores, trans_types = evaluate_predictions(val_dataloader, model, max_length=20, eval_type="max")
         val_accuracy = dict()
@@ -189,8 +188,6 @@ def main():
         for trans in np.unique(trans_types):
             val_accuracy[trans] = np.mean(scores[trans_types==trans])
         val_accuracy_by_epoch.append(val_accuracy)
-
-
         # after each epoch, adjust the general learning rate
         if epoch>1 or not args.lr_warmup: 
             scheduler_epoch.step()
@@ -203,7 +200,7 @@ if __name__ == "__main__":
     import pstats
     with cProfile.Profile() as pr:
         main()
-
+    # save profiling stats:
     stats = pstats.Stats(pr)
     stats.sort_stats(pstats.SortKey.TIME)
     stats.dump_stats(filename='train.prof')

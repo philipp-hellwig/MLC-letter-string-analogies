@@ -1,10 +1,13 @@
 import argparse
+import ast
 from copy import deepcopy
+import os
 import random
 import string
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 
 # TODO: Should we let predecessor problems spill over? i.e., a b c d -> z b c d
@@ -59,7 +62,7 @@ def succ(prob_letters, alphabet, *args):
 def pred(prob_letters, alphabet, *args):
     # find index in alphabet of first problem letter
     idx_first = alphabet.index(prob_letters[0])
-    if idx_first == (len(alphabet)-1):
+    if idx_first == 0:
         raise IndexError("Predecessor transformation cannot be applied to a problem that starts with the first letter of the alphabet!")
     return [prob_letters, [alphabet[idx_first-1]] + prob_letters[1:]]
 
@@ -200,7 +203,7 @@ def reverse(prob_letters, *args):
 
 
 # 18. Shift (a b c d -> e f g h)
-def shift(prob_letters, *args):
+def shift(prob_letters, alphabet, *args):
     idx_last = alphabet.index(prob_letters[-1])
     if idx_last == (len(alphabet)-1-len(prob_letters)):
         raise IndexError("Sequence is too close to the end of the alphabet to be shifted")
@@ -230,33 +233,25 @@ def k_derange(k, alphabet):
     return to_shuffle, [alphabet[i] for i in shuffled], shuffled_alphabet
 
 
-ALL_TRANSFORMATIONS = {
-    'extend_seq' : extend_sequence,
-    'succ' : succ,
-    'pred' : pred,
-    'remove_redundant' : remove_redundant,
-    'fix_alphabet' : fix_alphabetic_seq,
-    'sort' : sort,
-    "sort_group" : sort_group,
-    "rr_interleave" : rr_interleave,
-    "rr_succ" : rr_succ,
-    "fix_extend" : fix_extend,
-    "rr_sort" : rr_sort,
-    "extend_pred" : extend_pred,
-    "fix_interleave" : fix_interleave,
-    "extend_group": extend_group,
-    "extend_extend_succ": extend_extend_succ,
-    "fix_pred_succ": fix_pred_succ,
-    "reverse" : reverse,
-    "shift" : shift,
-    "replicate" : replicate,
-}
+def get_unique_problems_counterfactual_analogy():
+    """Returns unique problems used in Lewis, M., & Mitchell, M. (2024).
+    doi: https://doi.org/10.48550/arXiv.2402.08955
+    """
+    lewis_mitchell = pd.read_csv("https://raw.githubusercontent.com/marthaflinderslewis/counterfactual_analogy/refs/heads/main/data/data.csv")
+    lewis_mitchell["target_1"] = lewis_mitchell["target_1"].apply(ast.literal_eval)
+    lewis_mitchell["correct_answer"] = lewis_mitchell["correct_answer"].apply(ast.literal_eval)
+    lewis_mitchell["sep"] = [[">"] for _ in range(lewis_mitchell.shape[0])]
+    lewis_mitchell["problem"] = lewis_mitchell['target_1'] + lewis_mitchell["correct_answer"]
+    lewis_mitchell["problem"] = lewis_mitchell['target_1'] + lewis_mitchell["sep"] + lewis_mitchell["correct_answer"]
+    lewis_mitchell["problem"] = lewis_mitchell["problem"].apply(lambda x: " ".join(x))
+    
+    return lewis_mitchell["problem"].unique()
 
 
 def generate_dataset(
+        transformations: dict,
         alphabet_permutations: list=[1, 2, 5, 10, 20], 
         prob_lengths: list=[2,3,4,5,6],
-        transformations=ALL_TRANSFORMATIONS,
         n_reshuffle: int=50
         ) -> pd.DataFrame:
     
@@ -264,48 +259,54 @@ def generate_dataset(
     Each text file contains a set of queries and a set of study examples and the alphabet it was generated from.
 
     Args:
+        transformations dict: integer of transformation [int]: transformation [function].
         alphabet_permutations (list, optional): How many letters each subset . Defaults to [1, 2, 5, 10, 20].
         prob_lengths (list, optional): Which query lengths should be included. For example, query a b c -> ? has length 3. Defaults to [2,3,4,5,6].
-        transformations (dict, optional): name of transformation [str]: transformation [function]. Defaults to { 'succ' : apply_succ, 'pred' : apply_pred, 'add_letter' : apply_add_letter, 'remove_redundant' : apply_remove_redundant, 'fix_alphabet' : apply_fix_alphabet, 'sort' : apply_sort }.
         n_study (int, optional): How many study examples should be included? Defaults to 3.
-        n_reshuffle (int, optional): How many times to reshuffle to get new query - study example pairs.
+        n_reshuffle (int, optional): How many times to reshuffle to get new query-study example pairs. Defaults to 50
     Returns:
         pd.DataFrame: Dataframe with columns: n_perm, alphabet, transformation, query, study.
     """
     # data set should be csv with (n_permutations, alphabet, study examples, query, problem type)
     n = 0
     # initialize data frame:
-    cols = ["n_perm", "alphabet", "transformation", "query"] #+ ["study" + str(i) for i in range(1, n_study+1)]
+    cols = ["n_perm", "alphabet", "transformation", "problem", "query_length"] #+ ["study" + str(i) for i in range(1, n_study+1)]
     dataset = pd.DataFrame(columns=cols)
-    for n_perm in alphabet_permutations:
+    for n_perm in tqdm(alphabet_permutations):
         # permute alphabet:
         _, _, alphabet = k_derange(n_perm, list(string.ascii_lowercase))
         alph_string = " ".join(alphabet)
         
-        for name in transformations.keys():
-            queries = []
+        for func_id in transformations.keys():
+            problems, query_lengths = [], []
             for length in prob_lengths:
                 for i in range(len(alphabet)-length+1):
-                    query = transformations[name](alphabet[i:i+length+1], alphabet)
-                    query = " ".join(query[0]) + " > " + " ".join(query[1])
-                    queries.append(query)
-                    n += 1
-
-            # generate study examples by reshuffling the queries n_reshuffle times:
+                    try:
+                        query, solution = transformations[func_id](alphabet[i:i+length+1], alphabet)
+                        problem = " ".join(query) + " > " + " ".join(solution)
+                        problems.append(problem)
+                        query_lengths.append(len(query))
+                        n += 1
+                    except IndexError:
+                        pass
+            # generate study examples by reshuffling the problems n_reshuffle times:
             for _ in range(n_reshuffle):
                 new_data = pd.DataFrame(
-                    {"n_perm" : [n_perm for _ in range(len(queries))],
-                    "alphabet" : [alph_string for _ in range(len(queries))],
-                    "transformation" : [name for _ in range(len(queries))],
-                    "study" : np.random.permutation(queries),
-                    "query" : queries
+                    {"n_perm" : [n_perm for _ in range(len(problems))],
+                    "alphabet" : [alph_string for _ in range(len(problems))],
+                    "transformation" : [transformations[func_id].__name__ for _ in range(len(problems))],
+                    "study" : np.random.permutation(problems),
+                    "problem" : problems,
+                    "query_length" : query_lengths
                     })
                 dataset = pd.concat([dataset, new_data], ignore_index=True)
     print(f"Generated {n} unique queries.")
-    # drop rows where query is the same as study example:
-    dataset = dataset.loc[dataset["query"] != dataset["study"], :]
+
+    # drop rows where problem is the same as study example:
+    dataset = dataset.loc[dataset["problem"] != dataset["study"], :]
     print(f"Resulting in {dataset.shape[0]} total samples.")
     return dataset
+
 
 def dataset_to_disk(
         dataset: pd.DataFrame, 
@@ -318,15 +319,72 @@ def dataset_to_disk(
     rows = dataset.shape[0]
     max_train_id = round(train_ratio * rows)
     train = dataset.iloc[:max_train_id, :]
+
+    # get lewis mitchell problems and remove them from training set:
+    lewis_mitchell_problem_set = get_unique_problems_counterfactual_analogy()
+    train[~train["problem"].isin(lewis_mitchell_problem_set)]
+
+    # save datasets as csv:
     train.to_csv(f"{directory}/train.csv", index=False)
     val = dataset.iloc[max_train_id:, :]
     val.to_csv(f"{directory}/val.csv", index=False)
-    print(f"Done. {max_train_id} training samples and {rows - max_train_id} validation samples written to disk.")
+    print(f"Done. {train.shape[0]:,} training samples and {val.shape[0]:,} validation samples written to disk.")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--illustrate', default=False, help='Instead of generating data, illustrate each letter string analogy with an example.')
+ALL_TRANSFORMATIONS = {
+    1 : extend_sequence,
+    2 : succ,
+    3 : pred,
+    4 : remove_redundant,
+    5 : fix_alphabetic_seq,
+    6 : sort,
+    7 : sort_group,
+    8 : rr_interleave,
+    9 : rr_succ,
+    10 : fix_extend,
+    11 : rr_sort,
+    12 : extend_pred,
+    13 : fix_interleave,
+    14: extend_group,
+    15: extend_extend_succ,
+    16: fix_pred_succ,
+    17 : reverse,
+    18 : shift,
+    19 : replicate,
+}
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="""Overview of Transformations\n
+        \n
+         Transformations present in both data splits\n
+        1.	Extend Sequence (a b c d -> a b c d e)\n
+        2.	Successor (a b c d -> a b c e)\n
+        3.	Predecessor (b c d e -> a c d e)\n
+        4.	Remove Redundant letter (a b b c d -> a b c d)\n
+        5.	Fix alphabetic sequence (a b c w e -> a b c d e)\n
+        6.	Sort (a d c b e -> a b c d e)\n
+        7.	Sort + Group (aa dd cc bb ee -> aa bb cc dd ee)\n
+        8.	Remove redundant + Interleave (a x b x b x c x d -> a x b x c x d)\n
+        9.	Remove Redundant + successor (a b b c d -> a b c e)\n
+        10.	Fix alphabetic sequence + extend sequence (a b c w -> a b c d e)\n
+        \n
+        Transformations only present in validation/ test splits:\n
+        11. Remove Redundant + Sort (a d d c b e -> a b c d e)\n
+        12. Extend Sequence + Predecessor (b c d e -> a c d e f)\n
+        13. Fix alphabetic sequence + Interleave (a f b f c f w f e -> a f b f c f d f e)\n
+        14. Extend sequence + Group (aa bb cc dd -> aa bb cc dd ee)\n
+        15. Extend Sequence + Extend Sequence + Successor (a b c d -> a b c d e g)\n
+        16. Fix alphabetic Sequence + Predecessor + Successor (a b c w e -> a a c d f)\n
+        17. Reverse (a b c d -> d c b a)\n
+        18. Shift (a b c d -> e f g h)\n
+        19. Replicate (a b c d -> a b c d a b c d)""",
+    formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument('--illustrate', default=False, type=bool, help='Instead of generating data, illustrate each letter string analogy with an example.')
+    parser.add_argument('--transformations', default="all", type=str, required=True, help='Comma-separated list of integers of transformations to include (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
+    parser.add_argument('--data_dir', default="data", help='The directory in which the data set will be saved')
     args = parser.parse_args()
     
     # set seed for reproducibility:
@@ -334,7 +392,7 @@ if __name__ == "__main__":
 
     if args.illustrate:
         alphabet = list(string.ascii_lowercase)
-        problem_letters = alphabet[2:6]
+        problem_letters = alphabet[:6]
         print("Example analogy problems with alphabet:")
         print(alphabet, "\n")
         for i, trans in enumerate(ALL_TRANSFORMATIONS, start=1):
@@ -342,5 +400,20 @@ if __name__ == "__main__":
             problem = ALL_TRANSFORMATIONS[trans](problem_letters, alphabet)
             print(problem, "\n")
     else:
-        dataset = generate_dataset(n_reshuffle=50)
-        dataset_to_disk(dataset)
+        if args.transformations == "all":
+            transformations = ALL_TRANSFORMATIONS
+        else:
+            func_ids = [int(id) for id in args.transformations.split(',')]
+            transformations = {id: ALL_TRANSFORMATIONS[id] for id in func_ids}
+        
+        dataset = generate_dataset(transformations=transformations, n_reshuffle=50)
+        # create directory if it doesnt exist yet
+        if not os.path.exists(args.data_dir):
+            os.makedirs(args.data_dir)
+            print(f"Created '{args.data_dir}' directory.")
+        dataset_to_disk(dataset, directory=args.data_dir)
+
+
+if __name__ == "__main__":
+    main()
+

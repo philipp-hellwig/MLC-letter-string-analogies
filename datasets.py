@@ -87,10 +87,10 @@ class LetterStringDataset(Dataset):
         # load data:
         self.data = pd.read_csv(f"{data_dir}/{mode}.csv")
         # preprocess data:
-        # split query into query xq and target yq
-        self.data[["xq","yq"]] = self.data["query"].str.split(">", expand=True)
+        # split problem into query xq and target yq
+        self.data[["xq","yq"]] = self.data["problem"].str.split(">", expand=True)
         self.data["xq"] = self.data["xq"].str.strip()
-        # create context:
+        # create context (alphabet, study example, query):
         sos = self.langs["input"].index2symbol[self.langs["input"].SOS_idx]
         io = self.langs["input"].index2symbol[self.langs["input"].IN_OUT_idx]
         # prepare context
@@ -147,12 +147,12 @@ def set_batch_to_device(batch):
 if __name__ == "__main__":
     # example for creating Dataset and DataLoader objects:
     from torch.utils.data import DataLoader
-    D_val = LetterStringDataset(data_dir="data", mode="val")
+    D_val = LetterStringDataset(data_dir="data/no_pred", mode="val")
     item = D_val.__getitem__(0)
     print("Dataset item:")
     print(item)
 
-    val_dataloader = DataLoader(D_val, batch_size=25, collate_fn=D_val.collate_fn, shuffle=True, num_workers=8, pin_memory=True, persistent_workers=True)
+    val_dataloader = DataLoader(D_val, batch_size=25, collate_fn=D_val.collate_fn)
     batch = next(iter(val_dataloader))
     print("\nDataloader batch:")
     print(f"with keys: {batch.keys()}\n")
