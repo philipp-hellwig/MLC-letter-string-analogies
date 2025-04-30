@@ -205,7 +205,7 @@ def reverse(prob_letters, *args):
 # 18. Shift (a b c d -> e f g h)
 def shift(prob_letters, alphabet, *args):
     idx_last = alphabet.index(prob_letters[-1])
-    if idx_last == (len(alphabet)-1-len(prob_letters)):
+    if idx_last > (len(alphabet)-1-len(prob_letters)):
         raise IndexError("Sequence is too close to the end of the alphabet to be shifted")
     return [prob_letters, alphabet[idx_last+1:idx_last+1+len(prob_letters)]]
 
