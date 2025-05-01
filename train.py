@@ -198,11 +198,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import cProfile
-    import pstats
-    with cProfile.Profile() as pr:
-        main()
-    # save profiling stats:
-    stats = pstats.Stats(pr)
-    stats.sort_stats(pstats.SortKey.TIME)
-    stats.dump_stats(filename='train.prof')
+    main()
