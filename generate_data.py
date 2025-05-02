@@ -216,7 +216,7 @@ def replicate(prob_letters, *args):
 
 # permute alphabet
 def k_derange(k, alphabet):
-    if k == 1:
+    if k in [0,1]:
         return None, None, alphabet
     
     to_shuffle = sorted(random.sample(range(len(alphabet)), k=k))
@@ -252,7 +252,9 @@ def generate_dataset(
         transformations: dict,
         alphabet_permutations: list=[1, 2, 5, 10, 20], 
         prob_lengths: list=[2,3,4,5,6],
-        n_reshuffle: int=50
+        n_reshuffle: int=50,
+        alphabets_per_permutation: int=1,
+        n_study: int=1
         ) -> pd.DataFrame:
     
     """Generate a dataset of letter string analogies and save them to train and val folders.
@@ -262,7 +264,7 @@ def generate_dataset(
         transformations dict: integer of transformation [int]: transformation [function].
         alphabet_permutations (list, optional): How many letters each subset . Defaults to [1, 2, 5, 10, 20].
         prob_lengths (list, optional): Which query lengths should be included. For example, query a b c -> ? has length 3. Defaults to [2,3,4,5,6].
-        n_study (int, optional): How many study examples should be included? Defaults to 3.
+        n_study (int, optional): How many study examples should be included? Defaults to 1.
         n_reshuffle (int, optional): How many times to reshuffle to get new query-study example pairs. Defaults to 50
     Returns:
         pd.DataFrame: Dataframe with columns: n_perm, alphabet, transformation, query, study.
@@ -273,38 +275,50 @@ def generate_dataset(
     cols = ["n_perm", "alphabet", "transformation", "problem", "query_length"] #+ ["study" + str(i) for i in range(1, n_study+1)]
     dataset = pd.DataFrame(columns=cols)
     for n_perm in tqdm(alphabet_permutations):
-        # permute alphabet:
-        _, _, alphabet = k_derange(n_perm, list(string.ascii_lowercase))
-        alph_string = " ".join(alphabet)
-        
-        for func_id in transformations.keys():
-            problems, query_lengths = [], []
-            for length in prob_lengths:
-                for i in range(len(alphabet)-length+1):
-                    try:
-                        query, solution = transformations[func_id](alphabet[i:i+length+1], alphabet)
-                        problem = " ".join(query) + " > " + " ".join(solution)
-                        problems.append(problem)
-                        query_lengths.append(len(query))
-                        n += 1
-                    except IndexError:
-                        pass
-            # generate study examples by reshuffling the problems n_reshuffle times:
-            for _ in range(n_reshuffle):
-                new_data = pd.DataFrame(
-                    {"n_perm" : [n_perm for _ in range(len(problems))],
-                    "alphabet" : [alph_string for _ in range(len(problems))],
-                    "transformation" : [transformations[func_id].__name__ for _ in range(len(problems))],
-                    "study" : np.random.permutation(problems),
-                    "problem" : problems,
-                    "query_length" : query_lengths
-                    })
-                dataset = pd.concat([dataset, new_data], ignore_index=True)
-    print(f"Generated {n} unique queries.")
+        alphabets_n_perm = []
+        for _ in range(alphabets_per_permutation):
+            while True:
+                # permute alphabet:
+                _, _, alphabet = k_derange(n_perm, list(string.ascii_lowercase))
+                alph_string = " ".join(alphabet)
+                if alph_string not in alphabets_n_perm:
+                    alphabets_n_perm.append(alph_string)
+                    break
+            
+                
+            for func_id in transformations.keys():
+                problems, query_lengths = [], []
+                for length in prob_lengths:
+                    for i in range(len(alphabet)-length+1):
+                        try:
+                            query, solution = transformations[func_id](alphabet[i:i+length+1], alphabet)
+                            problem = " ".join(query) + " > " + " ".join(solution)
+                            problems.append(problem)
+                            query_lengths.append(len(query))
+                            n += 1
+                        except IndexError:
+                            pass
+                # generate study examples by reshuffling the problems n_reshuffle times:
+                reshuffled_datasets = []
+                for _ in range(n_reshuffle):
+                    reshuffled_data = pd.DataFrame(
+                        {"n_perm" : [n_perm for _ in range(len(problems))],
+                        "alphabet" : [alph_string for _ in range(len(problems))],
+                        "transformation" : [transformations[func_id].__name__ for _ in range(len(problems))],
+                        "study" : np.random.permutation(problems),
+                        "problem" : problems,
+                        "query_length" : query_lengths
+                        })
+                    reshuffled_datasets.append(reshuffled_data)
+                dataset = pd.concat([dataset] + reshuffled_datasets, ignore_index=True)
+            if n_perm == 1:
+                break
+    
+    print(f"Generated {n:,} unique queries.")
 
     # drop rows where problem is the same as study example:
     dataset = dataset.loc[dataset["problem"] != dataset["study"], :]
-    print(f"Resulting in {dataset.shape[0]} total samples.")
+    print(f"Resulting in {dataset.shape[0]:,} total samples.")
     return dataset
 
 
@@ -382,37 +396,34 @@ def main():
         19. Replicate (a b c d -> a b c d a b c d)""",
     formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument('--illustrate', default=False, type=bool, help='Instead of generating data, illustrate each letter string analogy with an example.')
     parser.add_argument('--transformations', default="all", type=str, required=True, help='Comma-separated list of integers of transformations to include (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
     parser.add_argument('--data_dir', default="data", help='The directory in which the data set will be saved')
     parser.add_argument('--n_reshuffle', default=50, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 50.')
+    parser.add_argument('--alphabets_per_permutation', default=1, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 1.')
     args = parser.parse_args()
     
     # set seed for reproducibility:
     np.random.seed(1)
 
-    if args.illustrate:
-        alphabet = list(string.ascii_lowercase)
-        problem_letters = alphabet[:6]
-        print("Example analogy problems with alphabet:")
-        print(alphabet, "\n")
-        for i, trans in enumerate(ALL_TRANSFORMATIONS, start=1):
-            print(f"{i}. '{trans}':")
-            problem = ALL_TRANSFORMATIONS[trans](problem_letters, alphabet)
-            print(problem, "\n")
-    else:
-        if args.transformations == "all":
+    match args.transformations: 
+        case "all":
             transformations = ALL_TRANSFORMATIONS
-        else:
+        case "base":
+            transformations = {id: ALL_TRANSFORMATIONS[id] for id in range(1, 7)}
+        case _:
             func_ids = [int(id) for id in args.transformations.split(',')]
             transformations = {id: ALL_TRANSFORMATIONS[id] for id in func_ids}
-        
-        dataset = generate_dataset(transformations=transformations, n_reshuffle=args.n_reshuffle)
-        # create directory if it doesnt exist yet
-        if not os.path.exists(args.data_dir):
-            os.makedirs(args.data_dir)
-            print(f"Created '{args.data_dir}' directory.")
-        dataset_to_disk(dataset, directory=args.data_dir)
+    
+    dataset = generate_dataset(
+        transformations=transformations, 
+        n_reshuffle=args.n_reshuffle,
+        alphabets_per_permutation=args.alphabets_per_permutation
+    )
+    # create directory if it doesnt exist yet
+    if not os.path.exists(args.data_dir):
+        os.makedirs(args.data_dir)
+        print(f"Created '{args.data_dir}' directory.")
+    dataset_to_disk(dataset, directory=args.data_dir)
 
 
 if __name__ == "__main__":

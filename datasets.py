@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
+import numpy as np
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -97,10 +98,13 @@ class LetterStringDataset(Dataset):
         self.data["xq_context"] = self.data["alphabet"] + " " + sos + " " + self.data["study"] + " " + sos + " " + self.data["xq"]
         self.data["xq_context"] = self.data["xq_context"].str.replace(">", io)
         self.data["xq_context"] = self.data["xq_context"].str.split(" ")
-        self.data["yq_lengths"] = self.data["yq"].apply(lambda x: len(x))
-        
+
+        # convert problem (xq=query and yq=solution) to lists
         self.data["xq"] = self.data["xq"].str.split(" ")
         self.data["yq"] = self.data["yq"].str.strip().str.split(" ")
+        # get yq lengths
+        self.data["yq_lengths"] = self.data["yq"].apply(lambda x: len(x))
+        self.yq_max = self.data["yq_lengths"].max()
         # create tensors
         self.data["xq_context_tensor"] = self.data["xq_context"].apply(lambda x: self.langs["input"].symbols_to_tensor(x))
         self.data["yq_tensor"] = self.data["yq"].apply(lambda x: self.langs["output"].symbols_to_tensor(x))
@@ -112,7 +116,10 @@ class LetterStringDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int=None):
+        """Return letter-string problem by idx. If idx is not given, choose random problem instead."""
+        if idx is None:
+            idx = np.random.randint(len(self))
         return self.data[idx]
 
     def collate_fn(self, problems: list[dict]) -> dict:

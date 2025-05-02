@@ -55,7 +55,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filename_model', type=str, default='', help='*REQUIRED* Filename for saving model checkpoints. Typically ends in .pt')
     parser.add_argument('--dir_model', type=str, default='models', help='Directory for saving model files')
-    parser.add_argument('--dir_data', type=str, default='data', help='Directory for loading datasets')
+    parser.add_argument('--dir_data', type=str, default='data/base_problems', help='Directory for loading datasets')
     parser.add_argument('--batch_size', type=int, default=25, help='number of episodes per batch')
     parser.add_argument('--nepochs', type=int, default=50, help='number of training epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
@@ -91,16 +91,16 @@ def main():
         counter = 0 # num updates since the loss was last reported
         train_tracker = cp.checkpoint["train_tracker"]
         val_accuracy_by_epoch = cp.checkpoint["val_accuracy"]
-
-    else: # training a new model
+    
+    # training a new model
+    else: 
         # initialize datasets and dataloaders:
         D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train")
         train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
-        
         D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val")
         val_dataloader = DataLoader(D_val, batch_size=5000, collate_fn=D_val.collate_fn)
-        
         print(f"Training with datasets from directory {args.dir_data}")
+
         # setup model:
         model = MLC(
             hidden_size=args.emb_size, 
@@ -120,7 +120,6 @@ def main():
         # setup loss function and optimizer:
         loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
         optimizer = torch.optim.AdamW(model.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
-
         if args.lr_warmup:
             print('    with LR warmup ON (1st epoch)')
             scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-2)
@@ -149,7 +148,7 @@ def main():
     
     # training loop:
     for epoch in range(epoch_start,args.nepochs+1):
-        print("Epoch",epoch,"\n-------------------------------")
+        print("Epoch",epoch,"\n---------------------------------------------------------------")
 
         for train_batch in train_dataloader:
             loss = train(train_batch, model, loss_fn, optimizer)
@@ -183,13 +182,14 @@ def main():
             if args.lr_warmup and epoch==1: 
                 scheduler_warmup.step() 
         # after each epoch, calculate and save val accuracy:
-        scores, trans_types = evaluate_predictions(val_dataloader, model, max_length=20, eval_type="max")
+        scores, trans_types = evaluate_predictions(val_dataloader, model, max_length=val_dataloader.dataset.yq_max+5, eval_type="max")
         val_accuracy = dict()
         val_accuracy["epoch"] = epoch
         val_accuracy["overall"] = np.mean(scores)
         for trans in np.unique(trans_types):
             val_accuracy[trans] = np.mean(scores[trans_types==trans])
         val_accuracy_by_epoch.append(val_accuracy)
+        print(f"Val. Accuracy (after epoch {val_accuracy["epoch"]}): {val_accuracy["overall"]:.3f}")
         # after each epoch, adjust the general learning rate
         if epoch>1 or not args.lr_warmup: 
             scheduler_epoch.step()
