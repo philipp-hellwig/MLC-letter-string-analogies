@@ -1,6 +1,7 @@
 import string
 from collections import defaultdict
 from copy import copy
+import json
 
 import torch
 from torch.utils.data import Dataset
@@ -95,6 +96,10 @@ class LetterStringDataset(Dataset):
         # create context (alphabet, study example, query):
         sos = self.langs["input"].index2symbol[self.langs["input"].SOS_idx]
         io = self.langs["input"].index2symbol[self.langs["input"].IN_OUT_idx]
+        
+        # split data examples if there are multiple:
+        self.data["study"] = self.data["study"].str.replace("|", sos)
+
         # prepare context
         self.data["xq_context"] = self.data["alphabet"] + " " + sos + " " + self.data["study"] + " " + sos + " " + self.data["xq"]
         self.data["xq_context"] = self.data["xq_context"].str.replace(">", io)
@@ -163,5 +168,5 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(D_val, batch_size=25, collate_fn=D_val.collate_fn)
     batch = next(iter(val_dataloader))
     print("\nDataloader batch:")
-    print(f"with keys: {batch.keys()}\n")
+    print(f"with keys: {list(batch.keys())}\n")
     print(batch)

@@ -1,3 +1,5 @@
+"""Varied and fixed hyperparameters used in run_hpsearch.py"""
+
 hp_varied = {
     "batch_size": [10, 25, 100],
     "learning_rate": [1e-2, 1e-4, 1e-6],

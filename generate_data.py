@@ -254,7 +254,7 @@ def generate_dataset(
         prob_lengths: list=[2,3,4,5,6],
         n_reshuffle: int=50,
         alphabets_per_permutation: int=1,
-        n_study: int=1
+        n_study: int=3
         ) -> pd.DataFrame:
     
     """Generate a dataset of letter string analogies and save them to train and val folders.
@@ -300,12 +300,15 @@ def generate_dataset(
                             pass
                 # generate study examples by reshuffling the problems n_reshuffle times:
                 reshuffled_datasets = []
+                study_examples = np.array([np.random.permutation(problems) for _ in range(n_study)])
+                separator = " | "
+                study_examples_joined = np.array([separator.join(study_examples[:, i]) for i in range(study_examples.shape[1])])
                 for _ in range(n_reshuffle):
                     reshuffled_data = pd.DataFrame(
                         {"n_perm" : [n_perm for _ in range(len(problems))],
                         "alphabet" : [alph_string for _ in range(len(problems))],
                         "transformation" : [transformations[func_id].__name__ for _ in range(len(problems))],
-                        "study" : np.random.permutation(problems),
+                        "study" : study_examples_joined,
                         "problem" : problems,
                         "query_length" : query_lengths
                         })
@@ -316,8 +319,8 @@ def generate_dataset(
     
     print(f"Generated {n:,} unique queries.")
 
-    # drop rows where problem is the same as study example:
-    dataset = dataset.loc[dataset["problem"] != dataset["study"], :]
+    # drop rows where problem is part of the study examples:
+    dataset = dataset[~dataset.apply(lambda row: row["problem"] in row["study"], axis=1)]
     print(f"Resulting in {dataset.shape[0]:,} total samples.")
     return dataset
 
@@ -396,7 +399,7 @@ def main():
         19. Replicate (a b c d -> a b c d a b c d)""",
     formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument('--transformations', default="all", type=str, required=True, help='Comma-separated list of integers of transformations to include (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
+    parser.add_argument('--transformations', default="all", type=str, help='Comma-separated list of integers of transformations to include (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
     parser.add_argument('--data_dir', default="data", help='The directory in which the data set will be saved')
     parser.add_argument('--n_reshuffle', default=50, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 50.')
     parser.add_argument('--alphabets_per_permutation', default=1, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 1.')
