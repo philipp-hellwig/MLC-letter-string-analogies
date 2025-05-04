@@ -87,6 +87,7 @@ class LetterStringDataset(Dataset):
         self.langs = {'input' : Lang(alphabet), 'output': Lang(alphabet)}
         # load data:
         self.data = pd.read_csv(f"{data_dir}/{mode}.csv")
+        self.transformation_types = list(self.data.transformation.unique())
         # preprocess data:
         # split problem into query xq and target yq
         self.data[["xq","yq"]] = self.data["problem"].str.split(">", expand=True)

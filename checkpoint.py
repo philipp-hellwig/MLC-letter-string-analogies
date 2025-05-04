@@ -11,6 +11,7 @@ import datasets as dat
 
 class CheckPoint:
     def __init__(self, path: str, device: torch.device):
+        self.model_path = path
         self.checkpoint = torch.load(path, map_location=device, weights_only=False)
         self.train_stats = pd.DataFrame(self.checkpoint["train_tracker"])
         self.device = device
