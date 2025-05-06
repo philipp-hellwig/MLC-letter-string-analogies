@@ -34,7 +34,7 @@ def predict(batch, model, langs: datasets.Lang, max_length: int, eval_type='max'
     z_padded = z_padded.unsqueeze(1)
 
     # Run through decoder
-    all_decoder_outputs = torch.zeros((m, max_length), dtype=torch.long, device=DEVICE)
+    all_decoder_outputs = torch.zeros((batch_size, max_length), dtype=torch.long, device=DEVICE)
     for t in range(max_length):
         decoder_output = model.decode(z_padded, memory, memory_padding_mask)
         decoder_output = decoder_output[:,-1] # get the last step's output (batch_size, output_size)
@@ -50,7 +50,7 @@ def predict(batch, model, langs: datasets.Lang, max_length: int, eval_type='max'
 
     # Get predictions as strings and see if they are correct
     all_decoder_outputs = all_decoder_outputs.detach()
-    yq_predict = [emission_lang.tensor_to_symbols(all_decoder_outputs[q,:].view(-1)) for q in range(m)]
+    yq_predict = [emission_lang.tensor_to_symbols(all_decoder_outputs[i,:].view(-1)) for i in range(batch_size)]
     return yq_predict
 
 
