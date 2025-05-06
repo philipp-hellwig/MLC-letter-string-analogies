@@ -8,14 +8,14 @@ def asMinutes(s):
     s -= m * 60
     return '%dm %ds' % (m, s)
 
-def timeSince(since, percent):
+def timeSince(since, proportion):
     # prints time elapsed and estimated time remaining
     #
     # Input 
     #  since : previous time
-    #  percent : amount of training complete
+    #  proportion : amount of training complete
     now = time.time()
     s = now - since
-    es = s / (percent)
+    es = s / (proportion)
     rs = es - s
-    return '%s (- %s)' % (asMinutes(s), asMinutes(rs))  
+    return f'{asMinutes(s)} (- {asMinutes(rs)} left, {proportion*100:.1f}% completed)'

@@ -214,7 +214,7 @@ def shift(prob_letters, alphabet, *args):
 def replicate(prob_letters, *args):
     return [prob_letters, list(np.tile(prob_letters, 2))]
 
-# permute alphabet
+# used to permute alphabet
 def k_derange(k, alphabet):
     if k in [0,1]:
         return None, None, alphabet
@@ -321,6 +321,11 @@ def generate_dataset(
 
     # drop rows where problem is part of the study examples:
     dataset = dataset[~dataset.apply(lambda row: row["problem"] in row["study"], axis=1)]
+    # filter out problems that are in Lewis & Mitchell dataset:
+    l_m_problems = get_unique_problems_counterfactual_analogy()
+    dataset = dataset[~dataset["problem"].isin(l_m_problems)]
+    print(l_m_problems[:5])
+    print(dataset["problem"].head())
     print(f"Resulting in {dataset.shape[0]:,} total samples.")
     return dataset
 
@@ -423,10 +428,10 @@ def main():
         alphabets_per_permutation=args.alphabets_per_permutation
     )
     # create directory if it doesnt exist yet
-    if not os.path.exists(args.data_dir):
-        os.makedirs(args.data_dir)
-        print(f"Created '{args.data_dir}' directory.")
-    dataset_to_disk(dataset, directory=args.data_dir)
+    # if not os.path.exists(args.data_dir):
+    #     os.makedirs(args.data_dir)
+    #     print(f"Created '{args.data_dir}' directory.")
+    # dataset_to_disk(dataset, directory=args.data_dir)
 
 
 if __name__ == "__main__":

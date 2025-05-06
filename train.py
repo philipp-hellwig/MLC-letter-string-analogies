@@ -1,18 +1,18 @@
 
-from collections import defaultdict
-import time
 import argparse
+from collections import defaultdict
 import math
+import time
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
-import numpy as np
 
+import checkpoint
 import datasets as dat
-from evaluate import evaluate_ll, evaluate_predictions
+from evaluate import evaluate_loss, evaluate_predictions
 from model import MLC
 from train_lib import timeSince
-import checkpoint
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -31,18 +31,15 @@ def train(batch: defaultdict, model: MLC, loss_fn, optimizer) -> float:
     """
     optimizer.zero_grad()
     model.train()
-    target_batches = batch['yq_padded'] # (batch_size, max_target_length + 1)
-    # shifted targets with padding (added SOS symbol at beginning and removed EOS symbol) 
-    target_shifted_right = batch['yq_sos_padded'] # (batch_size, max_target_length + 1)
     # forward pass through MLC model
     if DEVICE == "cuda":
         with torch.autocast(device_type=DEVICE, dtype=torch.bfloat16):
-            decoder_output = model(target_shifted_right, batch) # returns (batch_size, max_target_length + 1, n_symbols)
+            decoder_output = model(batch['yq_sos_padded'], batch) # returns (batch_size, max_target_length + 1, n_symbols)
     else:
-        decoder_output = model(target_shifted_right, batch) # returns (batch_size, max_target_length + 1, n_symbols)
+        decoder_output = model(batch['yq_sos_padded'], batch) # returns (batch_size, max_target_length + 1, n_symbols)
     # flatten first two dimensions to pass to loss function:
     logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch_size * max_target_length + 1, output_size)
-    loss = loss_fn(logits_flat, target_batches.reshape(-1))
+    loss = loss_fn(logits_flat, batch['yq_padded'].reshape(-1))
     assert(not torch.isinf(loss))
     assert(not torch.isnan(loss))
     # backpropagate gradients and take optimization step:
@@ -53,7 +50,7 @@ def train(batch: defaultdict, model: MLC, loss_fn, optimizer) -> float:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--filename_model', type=str, default='', help='*REQUIRED* Filename for saving model checkpoints. Typically ends in .pt')
+    parser.add_argument('--filename_model', type=str, default='test.pt', help='*REQUIRED* Filename for saving model checkpoints. Ends in .pt')
     parser.add_argument('--dir_model', type=str, default='models', help='Directory for saving model files')
     parser.add_argument('--dir_data', type=str, default='data/base_problems', help='Directory for loading datasets')
     parser.add_argument('--batch_size', type=int, default=25, help='number of episodes per batch')
@@ -99,7 +96,7 @@ def main():
         train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
         D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val")
         val_dataloader = DataLoader(D_val, batch_size=5000, collate_fn=D_val.collate_fn)
-        print(f"Training with datasets from directory {args.dir_data}")
+        print(f"Using datasets from directory {args.dir_data}")
 
         # setup model:
         model = MLC(
@@ -137,7 +134,7 @@ def main():
         epoch_start = 1
 
     nsteps_estimate = math.ceil(args.nepochs*len(D_train)/args.batch_size)
-    avg_train_loss = 0.
+    sum_train_loss = 0.
     # group args in dict for checkpoint saving:
     params_state = {'langs': D_train.langs, 'emb_size':args.emb_size, 'input_size':D_train.langs['input'].n_symbols, 'output_size':D_train.langs['output'].n_symbols,
                     'dropout':args.dropout, 'nlayers_encoder':args.nlayers_encoder, 'nlayers_decoder':args.nlayers_decoder,
@@ -152,33 +149,29 @@ def main():
 
         for train_batch in train_dataloader:
             loss = train(train_batch, model, loss_fn, optimizer)
-            avg_train_loss += loss
+            sum_train_loss += loss
             counter += 1
             step += 1  
                         
             if step in [1,25] or step % 100 == 0:
                 mylr = optimizer.param_groups[0]['lr']
-                mytracker = {'epoch':epoch, 'step':step, 'lr':mylr, 'avg_train_loss':avg_train_loss/counter}
-                print('{:s} ({:d} {:.0f}% finished) LR: {:.7f}, TrainLoss: {:.4f}, '.format(timeSince(start, float(step) / float(nsteps_estimate)),
-                                        step, float(step) / float(nsteps_estimate) * 100., mylr, avg_train_loss/counter), end='')
-                
+                avg_train_loss = sum_train_loss / counter
                 # compute validation loss
-                total_ll, total_N = evaluate_ll(val_dataloader, model, D_val.langs, loss_fn=loss_fn)
-                val_loss = -total_ll / total_N
-                print('ValLoss: {:.4f}'.format(val_loss))
-                mytracker['val_loss'] = val_loss
-                mytracker['val_acc'] = torch.nan
-                # save new best model if specified and val_loss is the lowest:
-                if args.save_best and val_loss < best_val_loss and (epoch > args.nepochs * args.save_best_skip):
-                    best_val_loss = val_loss
-                    checkpoint.save(model_save_path,step,epoch,model,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state,is_best=True)
-                
-                # update best validation loss
-                best_val_loss = val_loss if val_loss < best_val_loss else best_val_loss
-                avg_train_loss = 0.
-                counter = 0
+                val_loss = evaluate_loss(val_dataloader, model, loss_fn=loss_fn)
+                mytracker = {'epoch':epoch, 'step':step, 'lr':mylr, 'avg_train_loss':avg_train_loss, 'val_loss': val_loss}
                 train_tracker.append(mytracker)
-            # if warm-up, adjust learning rate for each step of the first epoch
+                prop_finished = step / nsteps_estimate
+                print(f"{timeSince(start, prop_finished)}, Step: {step}, LR: {mylr:.7f}, TrainLoss: {avg_train_loss:.4f}, ValLoss: {val_loss:.4f}")
+                # update best validation loss
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    # save new best model if specified and epoch is past save_best_skip:
+                    if args.save_best and (epoch > args.nepochs * args.save_best_skip):
+                        checkpoint.save(model_save_path, step, epoch, model, optimizer, scheduler_epoch, train_tracker, val_accuracy_by_epoch, best_val_loss, params_state, is_best=True)
+                # reset training averages
+                sum_train_loss = 0.
+                counter = 0
+            # if learning rate warm-up, increase learning rate for each step within the first epoch
             if args.lr_warmup and epoch==1: 
                 scheduler_warmup.step() 
         # after each epoch, calculate and save val accuracy:
@@ -193,7 +186,7 @@ def main():
         # after each epoch, adjust the general learning rate
         if epoch>1 or not args.lr_warmup: 
             scheduler_epoch.step()
-        checkpoint.save(model_save_path,step,epoch,model,optimizer,scheduler_epoch,train_tracker, val_accuracy_by_epoch, best_val_loss,params_state)
+        checkpoint.save(model_save_path, step, epoch, model, optimizer, scheduler_epoch, train_tracker, val_accuracy_by_epoch, best_val_loss,params_state)
     print('Training complete.')
 
 
