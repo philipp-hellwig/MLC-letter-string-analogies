@@ -376,6 +376,16 @@ ALL_TRANSFORMATIONS = {
 }
 
 
+def demo(sequence: list, alphabet: list= list(string.ascii_lowercase)):
+    print(f"Examples with sequence {' '.join(sequence)}")
+    print(f"Using alphabet: {' '.join(alphabet)}\n")
+    for key, trans in ALL_TRANSFORMATIONS.items():
+        print(f"{key}. {trans.__name__}:")
+        query, target = trans(sequence, alphabet)
+        print(f"{' '.join(query)} -> {' '.join(target)}\n")
+    
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="""Overview of Transformations\n
