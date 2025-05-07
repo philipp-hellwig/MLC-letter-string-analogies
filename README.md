@@ -21,8 +21,7 @@ Applying Meta-Learning for Compositionality (MLC) introduced by Lake & Baroni (2
   pip install -r requirements.txt
   ```
 
-### Repository Descripiton
-
+### Repository Structure
 ```
 ├───analyses            - analysis notebooks for trained models.
 │
@@ -49,22 +48,29 @@ Applying Meta-Learning for Compositionality (MLC) introduced by Lake & Baroni (2
 You can obtain the datasets in two ways:
 1. to get all datasets used in the paper, download them [here](link).
 2. Generate datasets yourself.
-    - For example, to obtain a dataset run:
-    ```sh
-    python generate_data.py --transformations "base" --n_reshuffle 1 --alphabets_per_permutation 1 --data_dir "data/base_tiny"
+    #### Code Snippets
+    The snippets below generate all datasets used in our project:
+    ```python
+    python generate_data.py --data_dir "data/all_transformations_study1"
+    python generate_data.py --data_dir "data/all_transformations_study3" --study_examples 3
     ```
     #### Arguments
-    ```sh
-    --transformations TRANSFORMATIONS
-                        Comma-separated list of integers of transformations to include (e.g., 1,2 will include extend sequence and successor). Defaults to all.
+    ```    
+    --data_dir 
+          The directory in which the data set will be saved. Default "data/debug".
+
+    --transformations 
+          "base", "all" or Comma-separated list of integers of transformations to include 
+          (e.g., 1,2 will include extend sequence and successor). Defaults to "all".
     
-    --data_dir DATA_DIR   The directory in which the data set will be saved
+    --n_reshuffle 
+          How many times to reshuffle the data to get new problem-study example pairs. Default: 10.
     
-    --n_reshuffle N_RESHUFFLE
-                            How many times to reshuffle the data to get new problem-study example pairs. Defaults to 50.
-    
-    --alphabets_per_permutation ALPHABETS_PER_PERMUTATION
-                            How many unique alphabets to generate per permutation level. Defaults to 1.
+    --alphabets_per_permutation 
+          How many unique alphabets to generate per permutation level. Defaults: 5.
+  
+    --study_examples
+          How many study examples to show per problem. Default: 1.
     ```
 
 ### Training
@@ -77,7 +83,7 @@ For training to work by default, the data needs to be structured as follows:
 ```
 
 For instance, to train a model for `10` epochs on the `base_problems` dataset, run:
-```sh
+```python
 python train.py --filename_model "MLC_dbase_nep10.pt" --nepochs 10 --dir_data "data/base_problems"
 ```
 ### References

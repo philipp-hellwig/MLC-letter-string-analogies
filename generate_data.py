@@ -10,8 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 
 
-# TODO: Should we let predecessor and successor problems spill over? e.g., a b c d -> z b c d or x y z -> x y a
-# TODO: Exclude transformation rules 11-19 in training set
+SEED=42
 # ---------------------------------------------------------------------------------------------
 #                                  Overview of Transformations
 # ---------------------------------------------------------------------------------------------
@@ -275,7 +274,7 @@ def generate_dataset(
     # initialize data frame:
     cols = ["n_perm", "alphabet", "transformation", "problem", "query_length"] #+ ["study" + str(i) for i in range(1, n_study+1)]
     dataset = pd.DataFrame(columns=cols)
-    for n_perm in tqdm(alphabet_permutations):
+    for n_perm in tqdm(alphabet_permutations, desc="Generating Problems"):
         alphabets_n_perm = []
         for _ in range(alphabets_per_permutation):
             while True:
@@ -309,7 +308,7 @@ def generate_dataset(
                         {"n_perm" : [n_perm for _ in range(len(problems))],
                         "alphabet" : [alph_string for _ in range(len(problems))],
                         "transformation" : [transformations[func_id].__name__ for _ in range(len(problems))],
-                        "study" : study_examples_joined,
+                        "study" : np.random.permutation(study_examples_joined),
                         "problem" : problems,
                         "query_length" : query_lengths
                         })
@@ -317,41 +316,51 @@ def generate_dataset(
                 dataset = pd.concat([dataset] + reshuffled_datasets, ignore_index=True)
             if n_perm == 1:
                 break
-    
-    print(f"Generated {n:,} unique queries.")
-
     # drop rows where problem is part of the study examples:
     dataset = dataset[~dataset.apply(lambda row: row["problem"] in row["study"], axis=1)]
-    # filter out problems that are in Lewis & Mitchell dataset:
-    l_m_problems = get_unique_problems_counterfactual_analogy()
-    dataset = dataset[~dataset["problem"].isin(l_m_problems)]
-    print(l_m_problems[:5])
-    print(dataset["problem"].head())
-    print(f"Resulting in {dataset.shape[0]:,} total samples.")
     return dataset
 
 
 def dataset_to_disk(
         dataset: pd.DataFrame, 
         directory="data", 
-        train_ratio: float=0.9
+        train_prop: float=0.8
         ) -> None:
     
     # shuffle dataset:
-    dataset = dataset.sample(frac=1).reset_index(drop=True)
-    rows = dataset.shape[0]
-    max_train_id = round(train_ratio * rows)
-    train = dataset.iloc[:max_train_id, :]
-
-    # get lewis mitchell problems and remove them from training set:
+    dataset = dataset.sample(frac=1, random_state=SEED).reset_index(drop=True)
+    # get lewis mitchell problems and remove them from dataset:
     lewis_mitchell_problem_set = get_unique_problems_counterfactual_analogy()
-    train[~train["problem"].isin(lewis_mitchell_problem_set)]
+    dataset[~dataset["problem"].isin(lewis_mitchell_problem_set)]
 
+    unique_problems = dataset.problem.unique()
+    np.random.shuffle(unique_problems)
+    train_max = int(len(unique_problems) * train_prop)
+    train_problems = unique_problems[:train_max]
+
+    train = dataset[dataset.problem.isin(train_problems)]
+    train_transformations = [ALL_TRANSFORMATIONS[i].__name__ for i in range(1, 11)]
+    # exclude transformation types 11-19:
+    train = train[train.transformation.isin(train_transformations)]
+
+    val_max = train_max + (len(unique_problems)-train_max) // 2
+    val_problems = unique_problems[train_max:val_max]
+    val = dataset[dataset.problem.isin(val_problems)]
+    test_problems = unique_problems[val_max:]
+    test = dataset[dataset.problem.isin(test_problems)]
+
+    # resize val and test if train set got smaller due to filtering:
+    n_nontest = train.shape[0] / train_prop * (1-train_prop)/2
+    if n_nontest < val.shape[0]:
+        val = val.sample(frac=n_nontest/val.shape[0], random_state=SEED).reset_index(drop=True)
+    if n_nontest < test.shape[0]:
+        test = test.sample(frac=n_nontest/test.shape[0], random_state=SEED).reset_index(drop=True)
     # save datasets as csv:
     train.to_csv(f"{directory}/train.csv", index=False)
-    val = dataset.iloc[max_train_id:, :]
     val.to_csv(f"{directory}/val.csv", index=False)
-    print(f"Done. {train.shape[0]:,} training samples and {val.shape[0]:,} validation samples written to disk.")
+    test.to_csv(f"{directory}/test.csv", index=False)
+    n = train.shape[0] + val.shape[0] + test.shape[0]
+    print(f"{train.shape[0]:,} ({train.shape[0]/n*100:.1f}%) training-, {val.shape[0]:,} ({val.shape[0]/n*100:.1f}%) validation-, and {test.shape[0]:,} ({test.shape[0]/n*100:.1f}%) test problems written to disk.\nDone.")
 
 
 ALL_TRANSFORMATIONS = {
@@ -375,6 +384,7 @@ ALL_TRANSFORMATIONS = {
     18 : shift,
     19 : replicate,
 }
+
 
 
 def demo(sequence: list, alphabet: list= list(string.ascii_lowercase)):
@@ -416,13 +426,15 @@ def main():
     formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument('--transformations', default="all", type=str, help='Comma-separated list of integers of transformations to include (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
-    parser.add_argument('--data_dir', default="data", help='The directory in which the data set will be saved')
-    parser.add_argument('--n_reshuffle', default=50, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 50.')
-    parser.add_argument('--alphabets_per_permutation', default=1, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 1.')
+    parser.add_argument('--data_dir', default="data/test", help='The directory in which the data set will be saved')
+    parser.add_argument('--n_reshuffle', default=10, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 10.')
+    parser.add_argument('--alphabets_per_permutation', default=5, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 5.')
+    parser.add_argument('--study_examples', default=1, type=int, help='How many study examples to show per problem. Default is 1.')
     args = parser.parse_args()
     
     # set seed for reproducibility:
-    np.random.seed(1)
+    np.random.seed(SEED)
+    random.seed(SEED)
 
     match args.transformations: 
         case "all":
@@ -436,15 +448,16 @@ def main():
     dataset = generate_dataset(
         transformations=transformations, 
         n_reshuffle=args.n_reshuffle,
-        alphabets_per_permutation=args.alphabets_per_permutation
+        alphabets_per_permutation=args.alphabets_per_permutation,
+        n_study=args.study_examples
     )
     # create directory if it doesnt exist yet
-    # if not os.path.exists(args.data_dir):
-    #     os.makedirs(args.data_dir)
-    #     print(f"Created '{args.data_dir}' directory.")
-    # dataset_to_disk(dataset, directory=args.data_dir)
+    if not os.path.exists(args.data_dir):
+        os.makedirs(args.data_dir)
+        print(f"Created '{args.data_dir}' directory.")
+    # write data
+    dataset_to_disk(dataset, directory=args.data_dir)
 
 
 if __name__ == "__main__":
     main()
-
