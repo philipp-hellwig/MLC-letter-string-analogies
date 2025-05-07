@@ -15,7 +15,7 @@ from .. import checkpoint
 from ..evaluate import evaluate_ll, evaluate_predictions
 from ..model import MLC
 from ..train import train
-from ..train_lib import timeSince
+from ..timing import timeSince
 from config import hp_varied, hp_fixed
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

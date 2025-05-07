@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 
 # TODO: Should we let predecessor and successor problems spill over? e.g., a b c d -> z b c d or x y z -> x y a
+# TODO: Exclude transformation rules 11-19 in training set
 # ---------------------------------------------------------------------------------------------
 #                                  Overview of Transformations
 # ---------------------------------------------------------------------------------------------

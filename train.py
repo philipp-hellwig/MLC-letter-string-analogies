@@ -12,7 +12,7 @@ import checkpoint
 import datasets as dat
 from evaluate import evaluate_loss, evaluate_predictions
 from model import MLC
-from train_lib import timeSince
+from timing import timeSince
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
