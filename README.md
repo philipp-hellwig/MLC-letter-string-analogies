@@ -46,10 +46,10 @@ Applying Meta-Learning for Compositionality (MLC) introduced by Lake & Baroni (2
 
 ### Datasets
 You can obtain the datasets in two ways:
-1. to get all datasets used in the paper, download them [here](link).
+1. Download them [here](link).
 2. Generate datasets yourself.
     #### Code Snippets
-    The snippets below generate all datasets used in our project:
+    The snippets below generate all datasets used in our project (`data_dir` corresponds to the directory you find when downloading the data):
     ```python
     python generate_data.py --data_dir "data/all_transformations_study1"
     python generate_data.py --data_dir "data/all_transformations_study3" --study_examples 3
