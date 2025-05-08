@@ -57,17 +57,17 @@ You can obtain the datasets in two ways:
     #### Arguments
     ```    
     --data_dir 
-          The directory in which the data set will be saved. Default "data/debug".
+          The directory in which the data set will be saved. Default: "data/debug".
 
     --transformations 
           "base", "all" or Comma-separated list of integers of transformations to include 
-          (e.g., 1,2 will include extend sequence and successor). Defaults to "all".
+          (e.g., 1,2 will include extend sequence and successor). Default: "all".
     
     --n_reshuffle 
           How many times to reshuffle the data to get new problem-study example pairs. Default: 10.
     
     --alphabets_per_permutation 
-          How many unique alphabets to generate per permutation level. Defaults: 5.
+          How many unique alphabets to generate per permutation level. Default: 5.
   
     --study_examples
           How many study examples to show per problem. Default: 1.
