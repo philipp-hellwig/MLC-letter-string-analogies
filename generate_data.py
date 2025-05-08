@@ -283,8 +283,7 @@ def generate_dataset(
                 alph_string = " ".join(alphabet)
                 if alph_string not in alphabets_n_perm:
                     alphabets_n_perm.append(alph_string)
-                    break
-            
+                    break 
                 
             for func_id in transformations.keys():
                 problems, query_lengths = [], []
@@ -318,6 +317,18 @@ def generate_dataset(
                 break
     # drop rows where problem is part of the study examples:
     dataset = dataset[~dataset.apply(lambda row: row["problem"] in row["study"], axis=1)]
+    
+    # store generalization types:
+    generalization_types = dict()
+    type_0 = {trans[1].__name__: 0 for trans in list(ALL_TRANSFORMATIONS.items())[:10]}
+    generalization_types.update(type_0)
+    type_2 = {trans[1].__name__: 2 for trans in list(ALL_TRANSFORMATIONS.items())[10:16]}
+    generalization_types.update(type_2)
+    type_3 = {trans[1].__name__: 3 for trans in list(ALL_TRANSFORMATIONS.items())[16:]}
+    generalization_types.update(type_3)
+    
+    dataset["generalization_type"] = dataset["transformation"].apply(lambda x: generalization_types[x])
+    dataset["distribution"] = dataset["generalization_type"].apply(lambda x: "in" if x==0 else "out-of")
     return dataset
 
 

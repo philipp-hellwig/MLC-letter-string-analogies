@@ -78,11 +78,11 @@ class LetterStringDataset(Dataset):
         """Initialize a LetterStringDataset from a .csv file located at `data_dir`/`mode`.csv.
 
         Args:
-            mode (str): Either "train" or "val"
+            mode (str): Either "train", "val", or "test"
             data_dir (str): The directory the data is stored in.
             alphabet (list): The unique letters that occur in this alphabet.
         """
-        assert mode in ['train','val']        
+        assert mode in ['train','val','test']        
         self.mode = mode
         self.train = mode == 'train'
         self.langs = {'input' : Lang(alphabet), 'output': Lang(alphabet)}

@@ -82,13 +82,12 @@ def main():
         loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
         # load model, optimizer, scheduler
         model, optimizer, scheduler_epoch, epoch_start, step = cp.resume_training(args)
-        print(f"Successfully loaded parameters.\nResuming training at epoch {epoch_start}.")
+        print(f"Successfully loaded prerequisites.\nResuming training at epoch {epoch_start}.")
         # set training loop variables that have been recorded previously
         best_val_loss = cp.checkpoint["best_val_loss"]
         counter = 0 # num updates since the loss was last reported
         train_tracker = cp.checkpoint["train_tracker"]
         val_accuracy_by_epoch = cp.checkpoint["val_accuracy"]
-    
     # training a new model
     else: 
         # initialize datasets and dataloaders:
@@ -175,12 +174,14 @@ def main():
             if args.lr_warmup and epoch==1: 
                 scheduler_warmup.step() 
         # after each epoch, calculate and save val accuracy:
-        scores, trans_types = evaluate_predictions(val_dataloader, model, max_length=val_dataloader.dataset.yq_max+5, eval_type="max")
+        scores, trans_types, distribution = evaluate_predictions(val_dataloader, model, max_length=val_dataloader.dataset.yq_max+5, eval_type="max")
         val_accuracy = dict()
         val_accuracy["epoch"] = epoch
         val_accuracy["overall"] = np.mean(scores)
         for trans in np.unique(trans_types):
             val_accuracy[trans] = np.mean(scores[trans_types==trans])
+        for dist in np.unique(distribution):
+            val_accuracy[dist] = np.mean(scores[distribution==dist])
         val_accuracy_by_epoch.append(val_accuracy)
         print(f"Val. Accuracy (after epoch {val_accuracy["epoch"]}): {val_accuracy["overall"]:.3f}")
         # after each epoch, adjust the general learning rate

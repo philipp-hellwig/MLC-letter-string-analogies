@@ -23,15 +23,17 @@ class CheckPoint:
                 assert saved_value==current_value, f"Saved argument ({saved_key}={saved_value}) and current argument({current_key}={current_value}) mismatch! Failed to load model."
         return True
 
-    def load_dataloaders(self, data_dir="data", verbose: bool=True, val_batch_size=25) -> tuple:            
-        """Load and return train and validation DataLoaders"""
-        D_train = dat.LetterStringDataset(data_dir=data_dir, mode="train")
-        D_val = dat.LetterStringDataset(data_dir=data_dir, mode="val")
-        train_dataloader = DataLoader(D_train,batch_size=self.checkpoint["batch_size"], collate_fn=D_train.collate_fn)
-        val_dataloader = DataLoader(D_val,batch_size=val_batch_size, collate_fn=D_val.collate_fn)
+    def load_dataloaders(self, data_dir="data", verbose: bool=True, val_batch_size=25, use_datasets=["train","val"]) -> tuple:            
+        """Load and return train, validation, and test DataLoaders"""
+        dataloaders = []
+        for dataset in use_datasets:
+            ds = dat.LetterStringDataset(data_dir=data_dir, mode=dataset)
+            dataloader = DataLoader(ds,batch_size=self.checkpoint["batch_size"], collate_fn=ds.collate_fn)
+            dataloaders.append(dataloader)
         if verbose:
-            print(f"Loading training ({len(D_train):,} samples) and validation ({len(D_val):,} samples) dataloaders.")
-        return (train_dataloader, val_dataloader)
+            print("Loaded following dataloaders:")
+            print(",\n".join([f'{dataset} dataloader (n={len(dataloader.dataset):,})'for dataset, dataloader in zip(use_datasets, dataloaders)]))
+        return tuple(dataloaders)
 
     def load_optimizer(self, model, optimizer_class=torch.optim.AdamW, **kwargs):
         optimizer = optimizer_class(model.parameters(), lr=self.args["lr"], betas=(0.9,0.95), weight_decay=0.01, **kwargs)
