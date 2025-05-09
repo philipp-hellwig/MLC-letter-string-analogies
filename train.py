@@ -60,6 +60,7 @@ def main():
     parser.add_argument('--lr_warmup', default=True, action='store_true', help='Turn off learning rate warm up (by default, we use 1 epoch of warm up)')
     parser.add_argument('--nlayers_encoder', type=int, default=3, help='number of layers for encoder')
     parser.add_argument('--nlayers_decoder', type=int, default=3, help='number of layers for decoder')
+    parser.add_argument('--nheads', type=int, default=8, help='number of attention heads')
     parser.add_argument('--emb_size', type=int, default=128, help='size of embedding')
     parser.add_argument('--ff_mult', type=int, default=4, help='multiplier for size of the fully-connected layer in transformer')
     parser.add_argument('--dropout', type=float, default=0.1, help='dropout applied to embeddings and transformer')        
@@ -106,6 +107,7 @@ def main():
             PAD_idx_output=D_train.langs['output'].PAD_idx,
             nlayers_encoder=args.nlayers_encoder, 
             nlayers_decoder=args.nlayers_decoder,
+            nhead=args.nheads,
             dropout_p=args.dropout,
             activation= args.act,
             ff_mult=args.ff_mult
