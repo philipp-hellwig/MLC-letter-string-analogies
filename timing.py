@@ -2,6 +2,8 @@ import time
 import math
 
 
+# Robertson's asMinutes and timeSince helper functions to print time elapsed and estimated time
+# remaining given the current time and progress
 def asMinutes(s): 
     # convert seconds to minutes
     m = math.floor(s / 60)

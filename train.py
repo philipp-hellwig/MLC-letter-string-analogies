@@ -180,10 +180,13 @@ def main():
         val_accuracy["overall"] = np.mean(scores)
         for trans in np.unique(trans_types):
             val_accuracy[trans] = np.mean(scores[trans_types==trans])
+        print(f"Val. Accuracy (after epoch {val_accuracy["epoch"]}):", end=" ")
         for dist in np.unique(distribution):
-            val_accuracy[dist] = np.mean(scores[distribution==dist])
+                val_accuracy[dist] = np.mean(scores[distribution==dist])
+                print(f"{dist}-distribution: {val_accuracy[dist]:.3f},", end=" ")
+        print("\n")
         val_accuracy_by_epoch.append(val_accuracy)
-        print(f"Val. Accuracy (after epoch {val_accuracy["epoch"]}): in-distribution:{val_accuracy["in"]:.3f}, out-of-distribution:{val_accuracy["out-of"]:.3f}")
+        
         # after each epoch, adjust the general learning rate
         if epoch>1 or not args.lr_warmup: 
             scheduler_epoch.step()

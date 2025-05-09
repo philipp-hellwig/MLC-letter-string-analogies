@@ -315,34 +315,31 @@ def generate_dataset(
                 dataset = pd.concat([dataset] + reshuffled_datasets, ignore_index=True)
             if n_perm == 1:
                 break
-    # drop rows where problem is part of the study examples:
+    # drop rows where problem is one of the study examples:
     dataset = dataset[~dataset.apply(lambda row: row["problem"] in row["study"], axis=1)]
-    
-    # store generalization types:
-    generalization_types = dict()
-    type_0 = {trans[1].__name__: 0 for trans in list(ALL_TRANSFORMATIONS.items())[:10]}
-    generalization_types.update(type_0)
-    type_2 = {trans[1].__name__: 2 for trans in list(ALL_TRANSFORMATIONS.items())[10:16]}
-    generalization_types.update(type_2)
-    type_3 = {trans[1].__name__: 3 for trans in list(ALL_TRANSFORMATIONS.items())[16:]}
-    generalization_types.update(type_3)
-    
-    dataset["generalization_type"] = dataset["transformation"].apply(lambda x: generalization_types[x])
-    dataset["distribution"] = dataset["generalization_type"].apply(lambda x: "in" if x==0 else "out-of")
     return dataset
 
 
 def dataset_to_disk(
         dataset: pd.DataFrame, 
+        train_on: list,
         directory="data", 
         train_prop: float=0.8
         ) -> None:
-    
+    """Splits a dataset generated with `generate_dataset` into train, val and test set and writes them to .csv files
+
+    Args:
+        dataset (pd.DataFrame): dataframe generated with `generate_dataset`.
+        train_on (list[str]): Which transformations should be included in the training set? list of strings where strings are function names.
+        directory (str, optional): Folder in which to store the data. Defaults to "data".
+        train_prop (float, optional): Proportion of data allocated to the training set. Defaults to 0.8.
+    """
     # shuffle dataset:
     dataset = dataset.sample(frac=1, random_state=SEED).reset_index(drop=True)
     # get lewis mitchell problems and remove them from dataset:
     lewis_mitchell_problem_set = get_unique_problems_counterfactual_analogy()
     dataset[~dataset["problem"].isin(lewis_mitchell_problem_set)]
+    dataset["distribution"] = dataset["transformation"].apply(lambda x: "in" if x in train_on else "out-of")
 
     unique_problems = dataset.problem.unique()
     np.random.shuffle(unique_problems)
@@ -350,9 +347,8 @@ def dataset_to_disk(
     train_problems = unique_problems[:train_max]
 
     train = dataset[dataset.problem.isin(train_problems)]
-    train_transformations = [ALL_TRANSFORMATIONS[i].__name__ for i in range(1, 11)]
-    # exclude transformation types 11-19:
-    train = train[train.transformation.isin(train_transformations)]
+    # exclude transformation types that are not in train_on:
+    train = train[train.transformation.isin(train_on)]
 
     val_max = train_max + (len(unique_problems)-train_max) // 2
     val_problems = unique_problems[train_max:val_max]
@@ -375,27 +371,26 @@ def dataset_to_disk(
 
 
 ALL_TRANSFORMATIONS = {
-    1 : extend_sequence,
-    2 : succ,
-    3 : pred,
-    4 : remove_redundant,
-    5 : fix_alphabetic_seq,
-    6 : sort,
-    7 : sort_group,
-    8 : rr_interleave,
-    9 : rr_succ,
-    10 : fix_extend,
-    11 : rr_sort,
-    12 : extend_pred,
-    13 : fix_interleave,
+    1: extend_sequence,
+    2: succ,
+    3: pred,
+    4: remove_redundant,
+    5: fix_alphabetic_seq,
+    6: sort,
+    7: sort_group,
+    8: rr_interleave,
+    9: rr_succ,
+    10: fix_extend,
+    11: rr_sort,
+    12: extend_pred,
+    13: fix_interleave,
     14: extend_group,
     15: extend_extend_succ,
     16: fix_pred_succ,
-    17 : reverse,
-    18 : shift,
-    19 : replicate,
+    17: reverse,
+    18: shift,
+    19: replicate,
 }
-
 
 
 def demo(sequence: list, alphabet: list= list(string.ascii_lowercase)):
@@ -405,56 +400,37 @@ def demo(sequence: list, alphabet: list= list(string.ascii_lowercase)):
         print(f"{key}. {trans.__name__}:")
         query, target = trans(sequence, alphabet)
         print(f"{' '.join(query)} -> {' '.join(target)}\n")
-    
+
+
+def get_transformations(trans: str):
+    match trans: 
+        case "all":
+            transformations = ALL_TRANSFORMATIONS
+        case "base":
+            transformations = {id: ALL_TRANSFORMATIONS[id] for id in range(1, 7)}
+        case "train_default":
+            transformations = {id: ALL_TRANSFORMATIONS[id] for id in range(1, 11)}
+        case _:
+            func_ids = [int(id) for id in trans.split(',')]
+            transformations = {id: ALL_TRANSFORMATIONS[id] for id in func_ids}
+    return transformations
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="""Overview of Transformations\n
-        \n
-         Transformations present in both data splits\n
-        1.	Extend Sequence (a b c d -> a b c d e)\n
-        2.	Successor (a b c d -> a b c e)\n
-        3.	Predecessor (b c d e -> a c d e)\n
-        4.	Remove Redundant letter (a b b c d -> a b c d)\n
-        5.	Fix alphabetic sequence (a b c w e -> a b c d e)\n
-        6.	Sort (a d c b e -> a b c d e)\n
-        7.	Sort + Group (aa dd cc bb ee -> aa bb cc dd ee)\n
-        8.	Remove redundant + Interleave (a x b x b x c x d -> a x b x c x d)\n
-        9.	Remove Redundant + successor (a b b c d -> a b c e)\n
-        10.	Fix alphabetic sequence + extend sequence (a b c w -> a b c d e)\n
-        \n
-        Transformations only present in validation/ test splits:\n
-        11. Remove Redundant + Sort (a d d c b e -> a b c d e)\n
-        12. Extend Sequence + Predecessor (b c d e -> a c d e f)\n
-        13. Fix alphabetic sequence + Interleave (a f b f c f w f e -> a f b f c f d f e)\n
-        14. Extend sequence + Group (aa bb cc dd -> aa bb cc dd ee)\n
-        15. Extend Sequence + Extend Sequence + Successor (a b c d -> a b c d e g)\n
-        16. Fix alphabetic Sequence + Predecessor + Successor (a b c w e -> a a c d f)\n
-        17. Reverse (a b c d -> d c b a)\n
-        18. Shift (a b c d -> e f g h)\n
-        19. Replicate (a b c d -> a b c d a b c d)""",
-    formatter_class=argparse.RawTextHelpFormatter
-    )
-    parser.add_argument('--transformations', default="all", type=str, help='Comma-separated list of integers of transformations to include (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
-    parser.add_argument('--data_dir', default="data/test", help='The directory in which the data set will be saved')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--transformations', default="all", help='Comma-separated list of integers of transformations to include when generating data (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
+    parser.add_argument('--training_transformations', default="train_default", help='Which transformations to include in training set.')
+    parser.add_argument('--data_dir', default="data/debug", help='The directory in which the data set will be saved')
     parser.add_argument('--n_reshuffle', default=10, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 10.')
     parser.add_argument('--alphabets_per_permutation', default=5, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 5.')
     parser.add_argument('--study_examples', default=1, type=int, help='How many study examples to show per problem. Default is 1.')
     args = parser.parse_args()
     
-    # set seed for reproducibility:
+    # set seeds for reproducibility:
     np.random.seed(SEED)
     random.seed(SEED)
 
-    match args.transformations: 
-        case "all":
-            transformations = ALL_TRANSFORMATIONS
-        case "base":
-            transformations = {id: ALL_TRANSFORMATIONS[id] for id in range(1, 7)}
-        case _:
-            func_ids = [int(id) for id in args.transformations.split(',')]
-            transformations = {id: ALL_TRANSFORMATIONS[id] for id in func_ids}
+    transformations = get_transformations(args.transformations)
     
     dataset = generate_dataset(
         transformations=transformations, 
@@ -466,8 +442,10 @@ def main():
     if not os.path.exists(args.data_dir):
         os.makedirs(args.data_dir)
         print(f"Created '{args.data_dir}' directory.")
+    # get function names that are allowed in training set:
+    train_transformations = [func.__name__ for func in get_transformations(args.training_transformations).values()]
     # write data
-    dataset_to_disk(dataset, directory=args.data_dir)
+    dataset_to_disk(dataset, train_on=train_transformations, directory=args.data_dir)
 
 
 if __name__ == "__main__":
