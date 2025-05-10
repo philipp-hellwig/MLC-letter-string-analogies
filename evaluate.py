@@ -30,7 +30,7 @@ def predict(batch, model, langs: datasets.Lang, max_length: int, eval_type='max'
     emission_lang = langs['output']
     memory, memory_padding_mask = model.encode(batch) 
     batch_size = len(batch['yq'])
-    z_padded = torch.tensor([emission_lang.symbol2index[datasets.SOS_token]]*batch_size, device=DEVICE)
+    z_padded = torch.tensor([emission_lang.symbol2index[datasets.IO_SEP]]*batch_size, device=DEVICE)
     z_padded = z_padded.unsqueeze(1)
 
     # Run through decoder
