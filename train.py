@@ -34,9 +34,9 @@ def train(batch: defaultdict, model: MLC, loss_fn, optimizer) -> float:
     # forward pass through MLC model
     if DEVICE == "cuda":
         with torch.autocast(device_type=DEVICE, dtype=torch.bfloat16):
-            decoder_output = model(batch['yq_sos_padded'], batch) # returns (batch_size, max_target_length + 1, n_symbols)
+            decoder_output = model(batch['yq_io_padded'], batch) # returns (batch_size, max_target_length + 1, n_symbols)
     else:
-        decoder_output = model(batch['yq_sos_padded'], batch) # returns (batch_size, max_target_length + 1, n_symbols)
+        decoder_output = model(batch['yq_io_padded'], batch) # returns (batch_size, max_target_length + 1, n_symbols)
     # flatten first two dimensions to pass to loss function:
     logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch_size * max_target_length + 1, output_size)
     loss = loss_fn(logits_flat, batch['yq_padded'].reshape(-1))

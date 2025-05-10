@@ -64,7 +64,7 @@ def evaluate_loss(dataloader: torch.utils.data.DataLoader, model, loss_fn=None):
 def batch_loss(batch, model, loss_fn):
     """Evaluate loss for a given batch"""
     model.eval()
-    decoder_output = model(batch['yq_sos_padded'], batch) # b*nq x max_length x output_size    
+    decoder_output = model(batch['yq_io_padded'], batch) # b*nq x max_length x output_size    
     logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch*max_len, output_size)
     loss = loss_fn(logits_flat, batch['yq_padded'].reshape(-1))
     return loss.cpu().item()

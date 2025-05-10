@@ -115,7 +115,7 @@ class LetterStringDataset(Dataset):
         self.data["xq_context_tensor"] = self.data["xq_context"].apply(lambda x: self.langs["input"].symbols_to_tensor(x))
         self.data["yq_tensor"] = self.data["yq"].apply(lambda x: self.langs["output"].symbols_to_tensor(x))
         # yq shifted right (starting with sos token)
-        self.data["yq_sos_tensor"] = self.data["yq"].apply(lambda x: [sos] + x).apply(lambda x: self.langs["output"].symbols_to_tensor(x, add_eos=False))
+        self.data["yq_io_tensor"] = self.data["yq"].apply(lambda x: [io] + x).apply(lambda x: self.langs["output"].symbols_to_tensor(x, add_eos=False))
         # convert to list of dicts for easier retrieval by iterator
         self.data = self.data.to_dict("records")
 
@@ -145,7 +145,7 @@ class LetterStringDataset(Dataset):
         # pad tensors:
         batch["xq_context_padded"] = pad_sequence(batch["xq_context_tensor"], batch_first=True, padding_value=self.langs["input"].PAD_idx)
         batch["yq_padded"] = pad_sequence(batch["yq_tensor"], batch_first=True, padding_value=self.langs["output"].PAD_idx)
-        batch["yq_sos_padded"] = pad_sequence(batch["yq_sos_tensor"], batch_first=True, padding_value=self.langs["output"].PAD_idx)
+        batch["yq_io_padded"] = pad_sequence(batch["yq_io_tensor"], batch_first=True, padding_value=self.langs["output"].PAD_idx)
         return set_batch_to_device(batch)
 
 
