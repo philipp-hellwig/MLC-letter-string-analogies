@@ -343,7 +343,7 @@ def generate_dataset(
 def dataset_to_disk(
         dataset: pd.DataFrame, 
         train_on: list,
-        strict_split=True,
+        query_overlap=False,
         directory="data", 
         train_prop: float=0.8
         ) -> None:
@@ -362,7 +362,20 @@ def dataset_to_disk(
     # shuffle dataset:
     dataset = dataset.sample(frac=1, random_state=SEED).reset_index(drop=True)
 
-    if strict_split:
+    if query_overlap:
+        total_n = dataset.shape[0]
+        train_max = int(total_n*train_prop)
+        train = dataset.loc[:train_max,:]
+        # exclude transformation types that are not in train_on:
+        train = train[train.transformation.isin(train_on)]
+        val_max = int(train_max+(1-train_prop)*total_n/2)
+        val = dataset.loc[train_max:val_max,:]
+        test = dataset.loc[val_max:,:]
+        train_problem_study = (train["problem"] + train["study"]).unique()
+        val = val[~(val.problem + val.study).isin(train_problem_study)]
+        test = test[~(test.problem + test.study).isin(train_problem_study)]
+    
+    else:
         unique_problems = dataset.problem.unique()
         np.random.shuffle(unique_problems)
         train_max = int(len(unique_problems) * train_prop)
@@ -384,19 +397,6 @@ def dataset_to_disk(
             val = val.sample(frac=n_nontest/val.shape[0], random_state=SEED).reset_index(drop=True)
         if n_nontest < test.shape[0]:
             test = test.sample(frac=n_nontest/test.shape[0], random_state=SEED).reset_index(drop=True)
-    
-    else:
-        total_n = dataset.shape[0]
-        train_max = int(total_n*train_prop)
-        train = dataset.loc[:train_max,:]
-        # exclude transformation types that are not in train_on:
-        train = train[train.transformation.isin(train_on)]
-        val_max = int(train_max+(1-train_prop)*total_n/2)
-        val = dataset.loc[train_max:val_max,:]
-        test = dataset.loc[val_max:,:]
-        train_problem_study = (train["problem"] + train["study"]).unique()
-        val = val[~(val.problem + val.study).isin(train_problem_study)]
-        test = test[~(test.problem + test.study).isin(train_problem_study)]
     
     # save datasets as csv:
     train.to_csv(f"{directory}/train.csv", index=False)
@@ -484,15 +484,14 @@ def main():
     parser.add_argument('--n_reshuffle', default=10, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 10.')
     parser.add_argument('--alphabets_per_permutation', default=5, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 5.')
     parser.add_argument('--study_examples', default=1, type=int, help='How many study examples to show per problem. Default is 1.')
-    parser.add_argument('--strict_split', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--query_overlap', default=False, action='store_true')
     args = parser.parse_args()
     
     # set seeds for reproducibility:
     np.random.seed(SEED)
     random.seed(SEED)
-
+    print(args.query_overlap)
     transformations = get_transformations(args.transformations)
-    print(args.strict_split)
     dataset = generate_dataset(
         transformations=transformations, 
         n_reshuffle=args.n_reshuffle,
@@ -507,7 +506,7 @@ def main():
     # get function names that are allowed in training set:
     train_transformations = [func.__name__ for func in get_transformations(args.training_transformations).values()]
     # write dataset splits
-    dataset_to_disk(dataset, train_on=train_transformations, strict_split=args.strict_split, directory=args.data_dir)
+    dataset_to_disk(dataset, train_on=train_transformations, query_overlap=args.query_overlap, directory=args.data_dir)
 
 
 if __name__ == "__main__":
