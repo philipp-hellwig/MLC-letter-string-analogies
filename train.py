@@ -13,6 +13,7 @@ import datasets as dat
 from evaluate import evaluate_loss, evaluate_predictions
 from model import MLC
 from timing import timeSince
+from dataclasses import dataclass
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -54,6 +55,8 @@ def main():
     parser.add_argument('--dir_model', type=str, default='models', help='Directory for saving model files')
     parser.add_argument('--dir_data', type=str, default='data/base_problems', help='Directory for loading datasets')
     parser.add_argument('--batch_size', type=int, default=25, help='number of episodes per batch')
+    parser.add_argument('--sampling_method', type=str, default="unstructured", help="How to sample batches from the dataset. Options are: 'unstructured', 'alphabet', 'transformation' and 'both'. Default: 'unstructured'.")
+    parser.add_argument('--query_first', default=False, action='store_true', help="the order in which to construct the xq_context vector. If True, the order is query | study | alphabet, if False it is alphabet | study | query.")
     parser.add_argument('--nepochs', type=int, default=50, help='number of training epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
     parser.add_argument('--lr_end_factor', type=int, default=0.05, help='factor X for decrease learning rate linearly from 1.0*lr to X*lr across training')
@@ -92,11 +95,13 @@ def main():
     # training a new model
     else: 
         # initialize datasets and dataloaders:
-        D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train")
+        D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train", batch_by=args.sampling_method, batch_size=args.batch_size, query_first=args.query_first)
         train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
-        D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val")
+        D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val", batch_by=args.sampling_method, batch_size=args.batch_size, query_first=args.query_first)
         val_dataloader = DataLoader(D_val, batch_size=5000, collate_fn=D_val.collate_fn)
-        print(f"Using datasets from directory {args.dir_data}")
+        print(f"Using datasets from directory {args.dir_data}:")
+        print(D_train)
+        print(D_val)
 
         # setup model:
         model = MLC(
@@ -123,7 +128,7 @@ def main():
             scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-2)
             nstep_epoch_estimate = math.floor(len(D_train)/args.batch_size)
             scheduler_warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-4, end_factor=1.0, total_iters=nstep_epoch_estimate)
-        else:            
+        else:
             print('    with LR warmup OFF')
             scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-1)
 

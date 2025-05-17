@@ -214,6 +214,27 @@ def shift(prob_letters, alphabet, *args):
 def replicate(prob_letters, *args):
     return [prob_letters, list(np.tile(prob_letters, 2))]
 
+
+# 20.
+def fix_succ():
+    ...
+
+
+# 21:
+def fix_pred():
+    ...
+
+
+# 22:
+def sort_succ():
+    ...
+
+
+# 23:
+def sort_pred():
+    ...
+
+
 # used to permute alphabet
 def k_derange(k, alphabet):
     if k in [0,1]:
@@ -244,13 +265,12 @@ def get_unique_problems_counterfactual_analogy():
     lewis_mitchell["problem"] = lewis_mitchell['target_1'] + lewis_mitchell["correct_answer"]
     lewis_mitchell["problem"] = lewis_mitchell['target_1'] + lewis_mitchell["sep"] + lewis_mitchell["correct_answer"]
     lewis_mitchell["problem"] = lewis_mitchell["problem"].apply(lambda x: " ".join(x))
-    
     return lewis_mitchell["problem"].unique()
 
 
 def generate_dataset(
         transformations: dict,
-        alphabet_permutations: list=[1, 2, 5, 10, 20], 
+        alphabet_permutations: list=[0, 2, 5, 10, 20], 
         prob_lengths: list=[2,3,4,5,6],
         n_reshuffle: int=50,
         alphabets_per_permutation: int=1,
@@ -313,7 +333,7 @@ def generate_dataset(
                         })
                     reshuffled_datasets.append(reshuffled_data)
                 dataset = pd.concat([dataset] + reshuffled_datasets, ignore_index=True)
-            if n_perm == 1:
+            if n_perm == 0:
                 break
     # drop rows where problem is one of the study examples:
     dataset = dataset[~dataset.apply(lambda row: row["problem"] in row["study"], axis=1)]
@@ -323,6 +343,7 @@ def generate_dataset(
 def dataset_to_disk(
         dataset: pd.DataFrame, 
         train_on: list,
+        strict_split=True,
         directory="data", 
         train_prop: float=0.8
         ) -> None:
@@ -334,34 +355,49 @@ def dataset_to_disk(
         directory (str, optional): Folder in which to store the data. Defaults to "data".
         train_prop (float, optional): Proportion of data allocated to the training set. Defaults to 0.8.
     """
-    # shuffle dataset:
-    dataset = dataset.sample(frac=1, random_state=SEED).reset_index(drop=True)
     # get lewis mitchell problems and remove them from dataset:
     lewis_mitchell_problem_set = get_unique_problems_counterfactual_analogy()
     dataset[~dataset["problem"].isin(lewis_mitchell_problem_set)]
     dataset["distribution"] = dataset["transformation"].apply(lambda x: "in" if x in train_on else "out-of")
+    # shuffle dataset:
+    dataset = dataset.sample(frac=1, random_state=SEED).reset_index(drop=True)
 
-    unique_problems = dataset.problem.unique()
-    np.random.shuffle(unique_problems)
-    train_max = int(len(unique_problems) * train_prop)
-    train_problems = unique_problems[:train_max]
+    if strict_split:
+        unique_problems = dataset.problem.unique()
+        np.random.shuffle(unique_problems)
+        train_max = int(len(unique_problems) * train_prop)
+        train_problems = unique_problems[:train_max]
 
-    train = dataset[dataset.problem.isin(train_problems)]
-    # exclude transformation types that are not in train_on:
-    train = train[train.transformation.isin(train_on)]
+        train = dataset[dataset.problem.isin(train_problems)]
+        # exclude transformation types that are not in train_on:
+        train = train[train.transformation.isin(train_on)]
 
-    val_max = train_max + (len(unique_problems)-train_max) // 2
-    val_problems = unique_problems[train_max:val_max]
-    val = dataset[dataset.problem.isin(val_problems)]
-    test_problems = unique_problems[val_max:]
-    test = dataset[dataset.problem.isin(test_problems)]
+        val_max = train_max + (len(unique_problems)-train_max) // 2
+        val_problems = unique_problems[train_max:val_max]
+        val = dataset[dataset.problem.isin(val_problems)]
+        test_problems = unique_problems[val_max:]
+        test = dataset[dataset.problem.isin(test_problems)]
 
-    # resize val and test if train set got smaller due to filtering:
-    n_nontest = train.shape[0] / train_prop * (1-train_prop)/2
-    if n_nontest < val.shape[0]:
-        val = val.sample(frac=n_nontest/val.shape[0], random_state=SEED).reset_index(drop=True)
-    if n_nontest < test.shape[0]:
-        test = test.sample(frac=n_nontest/test.shape[0], random_state=SEED).reset_index(drop=True)
+        # resize val and test if train set got smaller due to filtering:
+        n_nontest = train.shape[0] / train_prop * (1-train_prop)/2
+        if n_nontest < val.shape[0]:
+            val = val.sample(frac=n_nontest/val.shape[0], random_state=SEED).reset_index(drop=True)
+        if n_nontest < test.shape[0]:
+            test = test.sample(frac=n_nontest/test.shape[0], random_state=SEED).reset_index(drop=True)
+    
+    else:
+        total_n = dataset.shape[0]
+        train_max = int(total_n*train_prop)
+        train = dataset.loc[:train_max,:]
+        # exclude transformation types that are not in train_on:
+        train = train[train.transformation.isin(train_on)]
+        val_max = int(train_max+(1-train_prop)*total_n/2)
+        val = dataset.loc[train_max:val_max,:]
+        test = dataset.loc[val_max:,:]
+        train_problem_study = (train["problem"] + train["study"]).unique()
+        val = val[~(val.problem + val.study).isin(train_problem_study)]
+        test = test[~(test.problem + test.study).isin(train_problem_study)]
+    
     # save datasets as csv:
     train.to_csv(f"{directory}/train.csv", index=False)
     val.to_csv(f"{directory}/val.csv", index=False)
@@ -381,6 +417,7 @@ ALL_TRANSFORMATIONS = {
     8: rr_interleave,
     9: rr_succ,
     10: fix_extend,
+    # val/test only transformations
     11: rr_sort,
     12: extend_pred,
     13: fix_interleave,
@@ -390,6 +427,29 @@ ALL_TRANSFORMATIONS = {
     17: reverse,
     18: shift,
     19: replicate,
+    # extra transformations not included in the original proposal:
+}
+
+STD_GENERALIZATION_TYPES = {
+    "extend_sequence": 0,
+    "succ": 0,
+    "pred": 0,
+    "remove_redundant": 0,
+    "fix_alphabetic_seq": 0,
+    "sort": 0,
+    "sort_group": 0,
+    "rr_interleave": 0,
+    "rr_succ": 0,
+    "fix_extend": 0,
+    "rr_sort": 2,
+    "extend_pred": 2,
+    "fix_interleave": 2,
+    "extend_group": 2,
+    "extend_extend_succ": 2,
+    "fix_pred_succ": 2,
+    "reverse": 3,
+    "shift": 3,
+    "replicate": 3
 }
 
 
@@ -424,6 +484,7 @@ def main():
     parser.add_argument('--n_reshuffle', default=10, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 10.')
     parser.add_argument('--alphabets_per_permutation', default=5, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 5.')
     parser.add_argument('--study_examples', default=1, type=int, help='How many study examples to show per problem. Default is 1.')
+    parser.add_argument('--strict_split', action=argparse.BooleanOptionalAction)
     args = parser.parse_args()
     
     # set seeds for reproducibility:
@@ -431,7 +492,7 @@ def main():
     random.seed(SEED)
 
     transformations = get_transformations(args.transformations)
-    
+    print(args.strict_split)
     dataset = generate_dataset(
         transformations=transformations, 
         n_reshuffle=args.n_reshuffle,
@@ -442,10 +503,11 @@ def main():
     if not os.path.exists(args.data_dir):
         os.makedirs(args.data_dir)
         print(f"Created '{args.data_dir}' directory.")
+
     # get function names that are allowed in training set:
     train_transformations = [func.__name__ for func in get_transformations(args.training_transformations).values()]
-    # write data
-    dataset_to_disk(dataset, train_on=train_transformations, directory=args.data_dir)
+    # write dataset splits
+    dataset_to_disk(dataset, train_on=train_transformations, strict_split=args.strict_split, directory=args.data_dir)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
-import string
 from collections import defaultdict
 from copy import copy
-import json
+import random
+import string
 
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
 import numpy as np
@@ -73,59 +73,124 @@ class Lang:
         return symbols
 
 
-class LetterStringDataset(Dataset):
-    def __init__(self, mode: str, data_dir: str, alphabet: list=list(string.ascii_lowercase)):
-        """Initialize a LetterStringDataset from a .csv file located at `data_dir`/`mode`.csv.
+class MetaSampler(Sampler):
+    """Creates a sampler that batches problems by the filter set by `batch_by` in `LetterStringDataset`. 
+    E.g., if `batch_by=="transformation"` and `dataset.current_filter == "succ"`, the sampler will return a batch of only successor problems
+    """
+    def __init__(self, dataset, batch_size):
+        self.dataset = dataset
+        self.batch_size = batch_size
 
-        Args:
-            mode (str): Either "train", "val", or "test"
-            data_dir (str): The directory the data is stored in.
-            alphabet (list): The unique letters that occur in this alphabet.
-        """
+    def __iter__(self):
+        # Get indices for the current transformation filter
+        self.dataset.set_random_filter()
+        indices = self.dataset.filter[self.dataset.current_filter]
+        indices = indices.copy()
+        random.shuffle(indices)
+        for i in range(0, len(indices), self.batch_size):
+            yield indices[i:i+self.batch_size]
+
+    def __len__(self):
+        return len(self.dataset.id_by_trans[self.dataset.current_filter]) // self.batch_size
+
+
+class LetterStringDataset(Dataset):
+    r"""Initialize a LetterStringDataset from a .csv file located at `data_dir`/`mode`.csv.
+
+    Args:
+        mode (str): Either "train", "val", or "test"
+        data_dir (str): The directory the data is stored in.
+        alphabet (list, optional): The unique letters that occur in this dataset. Default: standard unpermuted alphabet (a,b,c,...,z).
+        batch_by (str, optional): How to group batches. Options are: \
+            "unstructured"- Construct batch with random subset of the problems. \
+            "alphabet"- Construct batch with problems from the same alphabet. \
+            "transformation"- Construct batch with problems from the same transformation type. \
+            "both"- Construct batch with problems from the same transformation type and from the same alphabet. \
+            Default: "unstructured".
+        query_first (str, optional): Whether to put the query infront of the study example(s) and alphabet or after the alphabet and study example(s). Default: True.
+    """
+    def __init__(
+            self,
+            mode: str, 
+            data_dir: str, 
+            alphabet: list=list(string.ascii_lowercase), 
+            batch_size: int=25,
+            batch_by: str="unstructured", 
+            query_first: bool=False
+        ):
         assert mode in ['train','val','test']        
         self.mode = mode
         self.train = mode == 'train'
         self.langs = {'input' : Lang(alphabet), 'output': Lang(alphabet)}
         # load data:
-        self.data = pd.read_csv(f"{data_dir}/{mode}.csv")
-        self.transformation_types = list(self.data.transformation.unique())
-        # preprocess data:
+        data = pd.read_csv(f"{data_dir}/{mode}.csv")
+        self.batch_by = batch_by
+        self.transformation_types = list(data.transformation.unique())
+        self.unique_alphabets = list(data.alphabet.unique())
+        self.query_first = query_first
         # split problem into query xq and target yq
-        self.data[["xq","yq"]] = self.data["problem"].str.split(">", expand=True)
-        self.data["xq"] = self.data["xq"].str.strip()
-        # create context (alphabet, study example, query):
+        data[["xq","yq"]] = data["problem"].str.split(">", expand=True)
+        # convert problem (xq=query and yq=solution) to lists
+        data["xq"] = data["xq"].str.strip()
+        data["yq"] = data["yq"].str.strip().str.split(" ")
+        # get yq lengths
+        data["yq_lengths"] = data["yq"].apply(lambda x: len(x))
+        self.yq_max = data["yq_lengths"].max()
+
         sos = self.langs["input"].index2symbol[self.langs["input"].SOS_idx]
         io = self.langs["input"].index2symbol[self.langs["input"].IN_OUT_idx]
+        data["study"] = data["study"].str.replace("|", sos)
+
+        if query_first:
+            # concatenate context (query, study, alphabet)
+            data["xq_context"] = data["xq"] + " " + sos + " " + data["study"] + " " + sos + " " + data["alphabet"]
+        else:
+            # concatenate context (alphabet, study, query)
+            data["xq_context"] = data["alphabet"] + " " + sos + " " + data["study"] + " " + sos + " " + data["xq"]
         
-        # split data examples if there are multiple:
-        self.data["study"] = self.data["study"].str.replace("|", sos)
-
-        # prepare context
-        self.data["xq_context"] = self.data["alphabet"] + " " + sos + " " + self.data["study"] + " " + sos + " " + self.data["xq"]
-        self.data["xq_context"] = self.data["xq_context"].str.replace(">", io)
-        self.data["xq_context"] = self.data["xq_context"].str.split(" ")
-
-        # convert problem (xq=query and yq=solution) to lists
-        self.data["xq"] = self.data["xq"].str.split(" ")
-        self.data["yq"] = self.data["yq"].str.strip().str.split(" ")
-        # get yq lengths
-        self.data["yq_lengths"] = self.data["yq"].apply(lambda x: len(x))
-        self.yq_max = self.data["yq_lengths"].max()
+        data["xq_context"] = data["xq_context"].str.replace(">", io)
+        data["xq_context"] = data["xq_context"].str.split(" ")
         # create tensors
-        self.data["xq_context_tensor"] = self.data["xq_context"].apply(lambda x: self.langs["input"].symbols_to_tensor(x))
-        self.data["yq_tensor"] = self.data["yq"].apply(lambda x: self.langs["output"].symbols_to_tensor(x))
-        # yq shifted right (starting with sos token)
-        self.data["yq_io_tensor"] = self.data["yq"].apply(lambda x: [io] + x).apply(lambda x: self.langs["output"].symbols_to_tensor(x, add_eos=False))
+        data["xq_context_tensor"] = data["xq_context"].apply(lambda x: self.langs["input"].symbols_to_tensor(x))
+        data["yq_tensor"] = data["yq"].apply(lambda x: self.langs["output"].symbols_to_tensor(x))
+        # yq shifted right (starting with io token)
+        data["yq_io_tensor"] = data["yq"].apply(lambda x: [io] + x).apply(lambda x: self.langs["output"].symbols_to_tensor(x, add_eos=False))
         # convert to list of dicts for easier retrieval by iterator
-        self.data = self.data.to_dict("records")
+        self.data = data.to_dict("records")
+        
+        # initialize sampling method for obtaining batches from the dataset:
+        self.sampler = MetaSampler(self, batch_size=batch_size)
+        match batch_by:
+            case "transformation":
+                # accumulate example ids by transformation type:
+                self.filter = {trans: [] for trans in self.transformation_types}
+                for i, example in enumerate(self.data):
+                    self.filter[example["transformation"]].append(i)
+            case "alphabet":
+                # accumulate example ids by alphabet:
+                self.filter = {alph: [] for alph in self.unique_alphabets}
+                for i, example in enumerate(self.data):
+                    self.filter[example["alphabet"]].append(i)
+            case "both":
+                # accumulate example ids by transformation type and alphabet:
+                self.trans_alph_combinations = [" | ".join([trans, alph]) for trans in self.transformation_types for alph in self.unique_alphabets]
+                self.filter = {comb: [] for comb in self.trans_alph_combinations}
+                for i, example in enumerate(self.data):
+                    self.filter[" | ".join([example["transformation"], example["alphabet"]])].append(i)
+            case "unstructured":
+                self.filter = {"all": list(range(len(self.data)))}
+            case _ :
+                raise NotImplementedError(f"{batch_by} is an unknown value for the argument batch_by.")
+
+    
+    def set_random_filter(self):
+        self.current_filter = np.random.choice(list(self.filter.keys()))
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx: int=None):
-        """Return letter-string problem by idx. If idx is not given, choose random problem instead."""
-        if idx is None:
-            idx = np.random.randint(len(self))
+        """Return letter-string problem by `idx`. If `idx` is not given, return a random problem instead."""
         return self.data[idx]
 
     def collate_fn(self, problems: list[dict]) -> dict:
@@ -148,6 +213,15 @@ class LetterStringDataset(Dataset):
         batch["yq_io_padded"] = pad_sequence(batch["yq_io_tensor"], batch_first=True, padding_value=self.langs["output"].PAD_idx)
         return set_batch_to_device(batch)
 
+    def __str__(self):
+        return "\n\t".join([
+            f"LetterStringDataset({self.mode}):",
+            f"{len(self):,} letter-string analogy problems.",
+            f"{len(self.transformation_types)} transformation types: {", ".join(self.transformation_types)}",
+            f"{len(self.unique_alphabets)} permuted alphabets.",
+            f"Batch by: {self.batch_by}.",
+            f"Query first: {self.query_first}."
+        ])
 
 def set_batch_to_device(batch):
     # Make sure all padded tensors are on GPU if needed
@@ -161,7 +235,7 @@ if __name__ == "__main__":
     # example for creating Dataset and DataLoader objects:
     from torch.utils.data import DataLoader
     D_val = LetterStringDataset(data_dir="data/no_pred", mode="val")
-    item = D_val.__getitem__(0)
+    item = D_val.__getitem__()
     print("Dataset item:")
     print(item)
 
