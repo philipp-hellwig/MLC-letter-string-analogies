@@ -106,7 +106,7 @@ class LetterStringDataset(Dataset):
         mode (str): Either "train", "val", or "test"
         data_dir (str): The directory the data is stored in.
         alphabet (list, optional): The unique letters that occur in this dataset. Default: standard unpermuted alphabet (a,b,c,...,z).
-        batch_by (str, optional): How to group batches. Options are: \
+        batching_method (str, optional): How to group batches. Options are: \
             "unstructured"- Construct batch with random subset of the problems. \
             "alphabet"- Construct batch with problems from the same alphabet. \
             "transformation"- Construct batch with problems from the same transformation type. \
@@ -120,7 +120,7 @@ class LetterStringDataset(Dataset):
             data_dir: str, 
             alphabet: list=list(string.ascii_lowercase), 
             batch_size: int=25,
-            batch_by: str="unstructured", 
+            batching_method: str="unstructured", 
             query_first: bool=False
         ):
         assert mode in ['train','val','test']        
@@ -129,7 +129,7 @@ class LetterStringDataset(Dataset):
         self.langs = {'input' : Lang(alphabet), 'output': Lang(alphabet)}
         # load data:
         data = pd.read_csv(f"{data_dir}/{mode}.csv")
-        self.batch_by = batch_by
+        self.batching_method = batching_method
         self.transformation_types = list(data.transformation.unique())
         self.unique_alphabets = list(data.alphabet.unique())
         self.query_first = query_first
@@ -165,7 +165,7 @@ class LetterStringDataset(Dataset):
         
         # initialize sampling method for obtaining batches from the dataset:
         self.sampler = BatchSampler(self, batch_size=batch_size)
-        match batch_by:
+        match batching_method:
             case "transformation":
                 # accumulate example ids by transformation type:
                 self.filter = {trans: [] for trans in self.transformation_types}
@@ -185,7 +185,7 @@ class LetterStringDataset(Dataset):
             case "unstructured":
                 self.filter = {"all": list(range(len(self.data)))}
             case _ :
-                raise NotImplementedError(f"{batch_by} is an unknown value for the argument batch_by.")
+                raise NotImplementedError(f"{batching_method} is an unknown value for the argument batching_method.")
 
     
     def set_random_filter(self):

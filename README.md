@@ -109,7 +109,7 @@ Shared Arguments across models:
 | act             | gelu                            |
 
 Results:
-| filename_model                           | sampling_method   | query_first   |   loss |   accuracy in-dist |   accuracy out-of-dist |
+| filename_model                           | batching_method   | query_first   |   loss |   accuracy in-dist |   accuracy out-of-dist |
 |:-----------------------------------------|:------------------|:--------------|-------:|-------------------:|-----------------------:|
 | MLC_batchunstruct_dallstudy1_nep20.pt    | unstructured      | False         |  **1.079** |              **0.68**  |                  0.118 |
 | MLC_batchunstruct_qf_dallstudy1_nep20.pt | unstructured      | True          |  1.09  |              0.623 |                  0.086 |
