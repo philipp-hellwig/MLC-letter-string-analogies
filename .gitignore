@@ -4,5 +4,6 @@ misc.ipynb
 __pycache__
 presentations
 profiling
-train_results.md
 batching.ipynb
+analyses/table_batching_shared_params.md
+analyses/table_batching.md

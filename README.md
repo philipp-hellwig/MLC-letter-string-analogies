@@ -89,6 +89,35 @@ python train.py --filename_model "MLC_dbase_nep10.pt" --nepochs 10 --dir_data "d
 
 ## Results
 
+### Batching strategies
+
+Shared Arguments across models:
+| Argument        | Value                           |
+|:----------------|:--------------------------------|
+| dataset         | data/all_transformations_study1 |
+| batch_size      | 32                              |
+| nepochs         | 20                              |
+| lr              | 0.001                           |
+| lr_end_factor   | 0.05                            |
+| lr_warmup       | True                            |
+| nlayers_encoder | 3                               |
+| nlayers_decoder | 3                               |
+| nheads          | 8                               |
+| emb_size        | 128                             |
+| ff_mult         | 4                               |
+| dropout         | 0.1                             |
+| act             | gelu                            |
+
+Results:
+| filename_model                           | sampling_method   | query_first   |   loss |   accuracy in-dist |   accuracy out-of-dist |
+|:-----------------------------------------|:------------------|:--------------|-------:|-------------------:|-----------------------:|
+| MLC_batchunstruct_dallstudy1_nep20.pt    | unstructured      | False         |  **1.079** |              **0.68**  |                  0.118 |
+| MLC_batchunstruct_qf_dallstudy1_nep20.pt | unstructured      | True          |  1.09  |              0.623 |                  0.086 |
+| MLC_batchbytrans_dallstudy1_nep20.pt     | transformation    | False         |  1.203 |              0.64  |                  **0.121** |
+| MLC_batchbyalph_dallstudy1_nep20.pt      | alphabet          | False         |  1.112 |              0.618 |                  0.084 |
+| MLC_batchbyboth_dallstudy1_nep20.pt      | both              | False         |  1.257 |              0.602 |                  0.098 |
+
+Loss and Accuracy are based on the lowest/highest value achieved during training on the *validation* set. 
 
 ### References
 [^1]: Lake, B. M., & Baroni, M. (2023). Human-like systematic generalization through a meta-learning neural network. Nature, 623(7985), 115-121. https://doi.org/10.1038/s41586-023-06668-3
