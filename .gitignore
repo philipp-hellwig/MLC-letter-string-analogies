@@ -4,3 +4,5 @@ misc.ipynb
 __pycache__
 presentations
 profiling
+train_results.md
+batching.ipynb

@@ -71,6 +71,7 @@ def main():
     parser.add_argument('--save_best', default=True, action='store_true', help='Save the "best model" according to validation loss.')
     parser.add_argument('--save_best_skip', type=float, default=0.2, help='Do not bother saving the "best model" for this fraction of early training')
     parser.add_argument('--resume', default=False, action='store_true', help='Resume training from a previous checkpoint')
+    parser.add_argument('--print_batches', default=False, action='store_true', help='print the 1st, 25th, and thereafter every 100th batch for debugging')
 
     args = parser.parse_args()
     model_save_path = f"{args.dir_model}/{args.filename_model}"
@@ -96,9 +97,9 @@ def main():
     else: 
         # initialize datasets and dataloaders:
         D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train", batch_by=args.sampling_method, batch_size=args.batch_size, query_first=args.query_first)
-        train_dataloader = DataLoader(D_train, batch_size=args.batch_size, collate_fn=D_train.collate_fn, shuffle=True)
-        D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val", batch_by=args.sampling_method, batch_size=args.batch_size, query_first=args.query_first)
-        val_dataloader = DataLoader(D_val, batch_size=5000, collate_fn=D_val.collate_fn)
+        train_dataloader = DataLoader(D_train, batch_sampler=D_train.sampler, collate_fn=D_train.collate_fn)
+        D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val", batch_by=args.sampling_method, batch_size=5000, query_first=args.query_first)
+        val_dataloader = DataLoader(D_val, batch_sampler=D_val.sampler, collate_fn=D_val.collate_fn)
         print(f"Using datasets from directory {args.dir_data}:")
         print(D_train)
         print(D_val)
@@ -160,6 +161,12 @@ def main():
             step += 1  
                         
             if step in [1,25] or step % 100 == 0:
+                # debug printing:
+                if args.print_batches:
+                    for i, example in enumerate(train_batch["xq_context"]):
+                        print(f"Transformation: [{train_batch["transformation"][i]}], Alphabet: [{train_batch["alphabet"][i]}]")
+                        print(f"xq_context: {" ".join(example)}")
+                        print(f"xq_context_tensor: {" ".join([str(int(t)) for t in train_batch["xq_context_tensor"][i]])}\n")
                 mylr = optimizer.param_groups[0]['lr']
                 avg_train_loss = sum_train_loss / counter
                 # compute validation loss

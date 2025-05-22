@@ -73,22 +73,27 @@ class Lang:
         return symbols
 
 
-class MetaSampler(Sampler):
+class BatchSampler(Sampler):
     """Creates a sampler that batches problems by the filter set by `batch_by` in `LetterStringDataset`. 
     E.g., if `batch_by=="transformation"` and `dataset.current_filter == "succ"`, the sampler will return a batch of only successor problems
     """
-    def __init__(self, dataset, batch_size):
+    def __init__(self, dataset, batch_size: int):
         self.dataset = dataset
         self.batch_size = batch_size
 
     def __iter__(self):
-        # Get indices for the current transformation filter
-        self.dataset.set_random_filter()
-        indices = self.dataset.filter[self.dataset.current_filter]
-        indices = indices.copy()
-        random.shuffle(indices)
-        for i in range(0, len(indices), self.batch_size):
-            yield indices[i:i+self.batch_size]
+        all_indices = []
+        # go through all filters
+        for f in self.dataset.filter.keys():
+            # Get indices for the current filter f
+            indices = self.dataset.filter[f]
+            indices = indices.copy()
+            random.shuffle(indices)
+            for i in range(0, len(indices), self.batch_size):
+                all_indices.append(indices[i:i+self.batch_size])
+        random.shuffle(all_indices)
+        for batch in all_indices:
+            yield batch
 
     def __len__(self):
         return len(self.dataset.id_by_trans[self.dataset.current_filter]) // self.batch_size
@@ -159,7 +164,7 @@ class LetterStringDataset(Dataset):
         self.data = data.to_dict("records")
         
         # initialize sampling method for obtaining batches from the dataset:
-        self.sampler = MetaSampler(self, batch_size=batch_size)
+        self.sampler = BatchSampler(self, batch_size=batch_size)
         match batch_by:
             case "transformation":
                 # accumulate example ids by transformation type:
