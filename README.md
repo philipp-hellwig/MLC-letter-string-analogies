@@ -2,9 +2,20 @@
 
 Applying Meta-Learning for Compositionality (MLC) introduced by Lake & Baroni (2023)[^1] to letter-string analogy problems.
 
-- The code for creating the models and the training loop is adapted from Lake & Baroni (2023)[^1] which you can find [here](https://github.com/brendenlake/MLC); the code for generating the data set is adapted from Lewis & Mitchell (2024)[^2] which you can find [here](https://github.com/marthaflinderslewis/counterfactual_analogy/).
+- The code for creating MLC models and running training is adapted from Lake & Baroni (2023)[^1] which you can find [here](https://github.com/brendenlake/MLC); the code for generating the datasets is adapted from Lewis & Mitchell (2024)[^2] which you can find [here](https://github.com/marthaflinderslewis/counterfactual_analogy/).
 
-## Overview
+# Table of Contents
+### [Overview](#overview-1)
+- [Requirements](#requirements)
+- [Repository Structure](#repository-structure)
+### [Replication](#replication-1)
+- [Datasets](#datasets)
+- [Training](#training)
+### [Experiments](#experiments-1)
+- [Batching strategies](#batching-strategies)
+### [References](#references-1)
+
+## Overview 
 
 ### Requirements
 
@@ -42,6 +53,7 @@ Applying Meta-Learning for Compositionality (MLC) introduced by Lake & Baroni (2
 |   train.py            - training loop for the MLC model
 |   timing.py           - timing utility function
 ```
+
 ## Replication
 
 ### Datasets
@@ -87,11 +99,11 @@ For instance, to train a model for `10` epochs on the `base_problems` dataset, r
 python train.py --filename_model "MLC_dbase_nep10.pt" --nepochs 10 --dir_data "data/base_problems"
 ```
 
-## Results
+## Experiments <a name="Experiments"></a>
 
 ### Batching strategies
 
-Shared Arguments across models:
+Shared Arguments across experiments:
 | Argument        | Value                           |
 |:----------------|:--------------------------------|
 | dataset         | data/all_transformations_study1 |
@@ -119,6 +131,6 @@ Results:
 
 Loss and Accuracy are based on the lowest/highest value achieved during training on the *validation* set. 
 
-### References
+## References
 [^1]: Lake, B. M., & Baroni, M. (2023). Human-like systematic generalization through a meta-learning neural network. Nature, 623(7985), 115-121. https://doi.org/10.1038/s41586-023-06668-3
 [^2]: Lewis, M., & Mitchell, M. (2024). Using Counterfactual Tasks to Evaluate the Generality of Analogical Reasoning in Large Language Models. Proceedings of the Annual Meeting of the Cognitive Science Society, 46. https://escholarship.org/uc/item/58d9s666
