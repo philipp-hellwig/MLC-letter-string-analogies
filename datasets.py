@@ -224,7 +224,7 @@ class LetterStringDataset(Dataset):
             f"{len(self):,} letter-string analogy problems.",
             f"{len(self.transformation_types)} transformation types: {", ".join(self.transformation_types)}",
             f"{len(self.unique_alphabets)} permuted alphabets.",
-            f"Batch by: {self.batch_by}.",
+            f"Batch by: {self.batching_method}.",
             f"Query first: {self.query_first}."
         ])
 

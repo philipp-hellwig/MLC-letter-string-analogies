@@ -27,7 +27,7 @@ class CheckPoint:
         """Load and return train, validation, and test DataLoaders"""
         dataloaders = []
         for dataset in use_datasets:
-            ds = dat.LetterStringDataset(data_dir=data_dir, mode=dataset, batch_by=self.args["sampling_method"], batch_size=self.checkpoint["batch_size"], query_first=self.args["query_first"])
+            ds = dat.LetterStringDataset(data_dir=data_dir, mode=dataset, batching_method=self.args["sampling_method"], batch_size=self.checkpoint["batch_size"], query_first=self.args["query_first"])
             dataloader = DataLoader(ds,batch_size=self.checkpoint["batch_size"], collate_fn=ds.collate_fn)
             dataloaders.append(dataloader)
         if verbose:

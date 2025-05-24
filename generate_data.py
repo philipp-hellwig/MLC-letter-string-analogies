@@ -270,10 +270,10 @@ def get_unique_problems_counterfactual_analogy():
 
 def generate_dataset(
         transformations: dict,
-        alphabet_permutations: list=[0, 2, 5, 10, 20], 
+        permutation_levels: list=[0, 2, 5, 10, 20], 
         prob_lengths: list=[2,3,4,5,6],
         n_reshuffle: int=50,
-        alphabets_per_permutation: int=1,
+        alphabets_per_perm_level: int=1,
         n_study: int=3
         ) -> pd.DataFrame:
     
@@ -282,7 +282,7 @@ def generate_dataset(
 
     Args:
         transformations dict: integer of transformation [int]: transformation [function].
-        alphabet_permutations (list, optional): How many letters each subset . Defaults to [1, 2, 5, 10, 20].
+        permutation_levels (list, optional): How many letters each subset . Defaults to [1, 2, 5, 10, 20].
         prob_lengths (list, optional): Which query lengths should be included. For example, query a b c -> ? has length 3. Defaults to [2,3,4,5,6].
         n_study (int, optional): How many study examples should be included? Defaults to 1.
         n_reshuffle (int, optional): How many times to reshuffle to get new query-study example pairs. Defaults to 50
@@ -294,9 +294,9 @@ def generate_dataset(
     # initialize data frame:
     cols = ["n_perm", "alphabet", "transformation", "problem", "query_length"] #+ ["study" + str(i) for i in range(1, n_study+1)]
     dataset = pd.DataFrame(columns=cols)
-    for n_perm in tqdm(alphabet_permutations, desc="Generating Problems"):
+    for n_perm in tqdm(permutation_levels, desc="Generating Problems"):
         alphabets_n_perm = []
-        for _ in range(alphabets_per_permutation):
+        for _ in range(alphabets_per_perm_level):
             while True:
                 # permute alphabet:
                 _, _, alphabet = k_derange(n_perm, list(string.ascii_lowercase))
@@ -305,12 +305,12 @@ def generate_dataset(
                     alphabets_n_perm.append(alph_string)
                     break 
                 
-            for func_id in transformations.keys():
+            for func_idx in transformations.keys():
                 problems, query_lengths = [], []
                 for length in prob_lengths:
                     for i in range(len(alphabet)-length+1):
                         try:
-                            query, solution = transformations[func_id](alphabet[i:i+length+1], alphabet)
+                            query, solution = transformations[func_idx](alphabet[i:i+length+1], alphabet)
                             problem = " ".join(query) + " > " + " ".join(solution)
                             problems.append(problem)
                             query_lengths.append(len(query))
@@ -326,14 +326,14 @@ def generate_dataset(
                     reshuffled_data = pd.DataFrame(
                         {"n_perm" : [n_perm for _ in range(len(problems))],
                         "alphabet" : [alph_string for _ in range(len(problems))],
-                        "transformation" : [transformations[func_id].__name__ for _ in range(len(problems))],
+                        "transformation" : [transformations[func_idx].__name__ for _ in range(len(problems))],
                         "study" : np.random.permutation(study_examples_joined),
                         "problem" : problems,
                         "query_length" : query_lengths
                         })
                     reshuffled_datasets.append(reshuffled_data)
                 dataset = pd.concat([dataset] + reshuffled_datasets, ignore_index=True)
-            if n_perm == 0:
+            if n_perm in [0,1]:
                 break
     # drop rows where problem is one of the study examples:
     dataset = dataset[~dataset.apply(lambda row: row["problem"] in row["study"], axis=1)]
@@ -467,12 +467,12 @@ def get_transformations(trans: str):
         case "all":
             transformations = ALL_TRANSFORMATIONS
         case "base":
-            transformations = {id: ALL_TRANSFORMATIONS[id] for id in range(1, 7)}
+            transformations = {idx: ALL_TRANSFORMATIONS[idx] for idx in range(1, 7)}
         case "train_default":
-            transformations = {id: ALL_TRANSFORMATIONS[id] for id in range(1, 11)}
+            transformations = {idx: ALL_TRANSFORMATIONS[idx] for idx in range(1, 11)}
         case _:
-            func_ids = [int(id) for id in trans.split(',')]
-            transformations = {id: ALL_TRANSFORMATIONS[id] for id in func_ids}
+            func_ids = [int(idx) for idx in trans.split(',')]
+            transformations = {idx: ALL_TRANSFORMATIONS[idx] for idx in func_ids}
     return transformations
 
 
@@ -480,22 +480,25 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--transformations', default="all", help='Comma-separated list of integers of transformations to include when generating data (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
     parser.add_argument('--training_transformations', default="train_default", help='Which transformations to include in training set.')
+    parser.add_argument('--permutation_levels', default="1,2,5,10,20", help="Comma-seperated list of integers of permutation levels")
     parser.add_argument('--data_dir', default="data/debug", help='The directory in which the data set will be saved')
     parser.add_argument('--n_reshuffle', default=10, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 10.')
-    parser.add_argument('--alphabets_per_permutation', default=5, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 5.')
+    parser.add_argument('--alphabets_per_perm_level', default=5, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 5.')
     parser.add_argument('--study_examples', default=1, type=int, help='How many study examples to show per problem. Default is 1.')
-    parser.add_argument('--query_overlap', default=False, action='store_true')
+    parser.add_argument('--query_overlap', default=False, action='store_true', help="Whether or not to allow the same queries (with different study examples) to appear in all training splits.")
     args = parser.parse_args()
     
     # set seeds for reproducibility:
     np.random.seed(SEED)
     random.seed(SEED)
-    print(args.query_overlap)
     transformations = get_transformations(args.transformations)
+    perm_levels = [int(lvl) for lvl in args.permutation_levels.split(",")]
+
     dataset = generate_dataset(
-        transformations=transformations, 
+        transformations=transformations,
+        permutation_levels=perm_levels,
         n_reshuffle=args.n_reshuffle,
-        alphabets_per_permutation=args.alphabets_per_permutation,
+        alphabets_per_perm_level=args.alphabets_per_perm_level,
         n_study=args.study_examples
     )
     # create directory if it doesnt exist yet

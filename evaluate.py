@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torch.distributions import Categorical
+import torch.functional as F
 import torch.utils.data
 from tqdm import tqdm
 
@@ -10,7 +11,14 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 @torch.no_grad()
-def predict(batch, model, langs: datasets.Lang, max_length: int, eval_type='max') -> list:
+def predict(
+    batch, 
+    model, 
+    langs: datasets.Lang, 
+    max_length: int, 
+    eval_type='max', 
+    return_logits: bool=False
+    ) -> list:
     """Predicts outputs for problem batch until max_length is reached or EOS is found.
 
     Args:
@@ -35,10 +43,11 @@ def predict(batch, model, langs: datasets.Lang, max_length: int, eval_type='max'
 
     # Run through decoder
     all_decoder_outputs = torch.zeros((batch_size, max_length), dtype=torch.long, device=DEVICE)
+    all_logits = torch.zeros((batch_size, emission_lang.n_symbols, max_length), dtype=torch.float32, device=DEVICE)
     for t in range(max_length):
         decoder_output = model.decode(z_padded, memory, memory_padding_mask)
         decoder_output = decoder_output[:,-1] # get the last step's output (batch_size, output_size)
-
+        all_logits[:,:,t] = decoder_output
         # Choose the symbols at next timestep
         if eval_type == 'max': # pick the most likely
             top_id = torch.argmax(decoder_output,dim=1)
@@ -51,7 +60,7 @@ def predict(batch, model, langs: datasets.Lang, max_length: int, eval_type='max'
     # Get predictions as strings and see if they are correct
     all_decoder_outputs = all_decoder_outputs.detach()
     yq_predict = [emission_lang.tensor_to_symbols(all_decoder_outputs[i,:].view(-1)) for i in range(batch_size)]
-    return yq_predict
+    return (yq_predict, all_logits) if return_logits else yq_predict
 
 
 def evaluate_loss(dataloader: torch.utils.data.DataLoader, model, loss_fn=None):
