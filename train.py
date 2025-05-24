@@ -1,4 +1,3 @@
-
 import argparse
 from collections import defaultdict
 import math
@@ -96,9 +95,9 @@ def main():
     # training a new model
     else: 
         # initialize datasets and dataloaders:
-        D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train", batching_method=args.sampling_method, batch_size=args.batch_size, query_first=args.query_first)
+        D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train", batching_method=args.batching_method, batch_size=args.batch_size, query_first=args.query_first)
         train_dataloader = DataLoader(D_train, batch_sampler=D_train.sampler, collate_fn=D_train.collate_fn)
-        D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val", batching_method=args.sampling_method, batch_size=5000, query_first=args.query_first)
+        D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val", batching_method=args.batching_method, batch_size=5000, query_first=args.query_first)
         val_dataloader = DataLoader(D_val, batch_sampler=D_val.sampler, collate_fn=D_val.collate_fn)
         print(f"Using datasets from directory {args.dir_data}:")
         print(D_train)
