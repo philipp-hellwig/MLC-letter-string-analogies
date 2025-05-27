@@ -1,5 +1,6 @@
 from collections import defaultdict
 from copy import copy
+import math
 import random
 import string
 
@@ -7,7 +8,6 @@ import torch
 from torch.utils.data import Dataset, Sampler
 from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
-import numpy as np
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -77,26 +77,30 @@ class BatchSampler(Sampler):
     """Creates a sampler that batches problems by the filter set by `batch_by` in `LetterStringDataset`. 
     E.g., if `batch_by=="transformation"` and `dataset.current_filter == "succ"`, the sampler will return a batch of only successor problems
     """
-    def __init__(self, dataset, batch_size: int):
+    def __init__(self, dataset, batch_size: int, reshuffle: bool):
         self.dataset = dataset
         self.batch_size = batch_size
+        self.reshuffle = reshuffle
+        self.all_indices = None
 
     def __iter__(self):
-        all_indices = []
-        # go through all filters
-        for f in self.dataset.filter.keys():
-            # Get indices for the current filter f
-            indices = self.dataset.filter[f]
-            indices = indices.copy()
-            random.shuffle(indices)
-            for i in range(0, len(indices), self.batch_size):
-                all_indices.append(indices[i:i+self.batch_size])
-        random.shuffle(all_indices)
-        for batch in all_indices:
+        if self.reshuffle or self.all_indices is None:
+            self.all_indices = []
+            # go through all filters
+            for f in self.dataset.filter.keys():
+                # Get indices for the current filter f
+                indices = self.dataset.filter[f]
+                indices = indices.copy()
+                random.shuffle(indices)
+                for i in range(0, len(indices), self.batch_size):
+                    self.all_indices.append(indices[i:i+self.batch_size])
+            random.shuffle(self.all_indices)
+        
+        for batch in self.all_indices:
             yield batch
 
     def __len__(self):
-        return len(self.dataset.id_by_trans[self.dataset.current_filter]) // self.batch_size
+        return math.ceil(len(self.dataset) // self.batch_size)
 
 
 class LetterStringDataset(Dataset):
@@ -164,7 +168,7 @@ class LetterStringDataset(Dataset):
         self.data = data.to_dict("records")
         
         # initialize sampling method for obtaining batches from the dataset:
-        self.sampler = BatchSampler(self, batch_size=batch_size)
+        self.sampler = BatchSampler(self, batch_size=batch_size, reshuffle=self.train)
         match batching_method:
             case "transformation":
                 # accumulate example ids by transformation type:
@@ -186,10 +190,6 @@ class LetterStringDataset(Dataset):
                 self.filter = {"all": list(range(len(self.data)))}
             case _ :
                 raise NotImplementedError(f"{batching_method} is an unknown value for the argument batching_method.")
-
-    
-    def set_random_filter(self):
-        self.current_filter = np.random.choice(list(self.filter.keys()))
 
     def __len__(self):
         return len(self.data)

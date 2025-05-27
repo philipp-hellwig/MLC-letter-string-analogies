@@ -154,6 +154,11 @@ def main():
         print("Epoch",epoch,"\n---------------------------------------------------------------")
 
         for train_batch in train_dataloader:
+            if args.print_batches:
+                for i, example in enumerate(train_batch["xq_context"]):
+                    print(f"Transformation: [{train_batch["transformation"][i]}], Alphabet: [{train_batch["alphabet"][i]}]")
+                    print(f"xq_context: {" ".join(example)}")
+                    print(f"xq_context_tensor: {" ".join([str(int(t)) for t in train_batch["xq_context_tensor"][i]])}\n")
             loss = train(train_batch, model, loss_fn, optimizer)
             sum_train_loss += loss
             counter += 1
@@ -161,11 +166,6 @@ def main():
                         
             if step in [1,25] or step % 100 == 0:
                 # debug printing:
-                if args.print_batches:
-                    for i, example in enumerate(train_batch["xq_context"]):
-                        print(f"Transformation: [{train_batch["transformation"][i]}], Alphabet: [{train_batch["alphabet"][i]}]")
-                        print(f"xq_context: {" ".join(example)}")
-                        print(f"xq_context_tensor: {" ".join([str(int(t)) for t in train_batch["xq_context_tensor"][i]])}\n")
                 mylr = optimizer.param_groups[0]['lr']
                 avg_train_loss = sum_train_loss / counter
                 # compute validation loss
@@ -208,4 +208,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import cProfile
+    import pstats
+    with cProfile.Profile() as pr:
+        main()
+    stats = pstats.Stats(pr)
+    stats.sort_stats(pstats.SortKey.TIME)
+    stats.dump_stats(filename='train.prof')
