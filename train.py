@@ -92,7 +92,7 @@ def main():
         counter = 0 # num updates since the loss was last reported
         train_tracker = cp.checkpoint["train_tracker"]
         val_accuracy_by_epoch = cp.checkpoint["val_accuracy"]
-    # training a new model
+    # training a new model:
     else: 
         # initialize datasets and dataloaders:
         D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train", batching_method=args.batching_method, batch_size=args.batch_size, query_first=args.query_first)
@@ -187,15 +187,20 @@ def main():
             if args.lr_warmup and epoch==1: 
                 scheduler_warmup.step() 
         # after each epoch, calculate and save val accuracy:
-        scores, trans_types, distribution = evaluate_predictions(val_dataloader, model, max_length=val_dataloader.dataset.yq_max+5, eval_type="max")
+        scores, trans_types, distribution, copy = evaluate_predictions(val_dataloader, model, max_length=val_dataloader.dataset.yq_max+5, eval_type="max")
         val_accuracy = dict()
         val_accuracy["epoch"] = epoch
         val_accuracy["overall"] = np.mean(scores)
+        noncopy_scores = scores[~copy]
+        val_accuracy["copy"] = np.mean(scores[copy])
+        val_accuracy["noncopy"] = np.mean(scores[~copy])
         for trans in np.unique(trans_types):
-            val_accuracy[trans] = np.mean(scores[trans_types==trans])
+            val_accuracy[trans] = np.mean(scores[(trans_types==trans) & (~copy)])
         print(f"Val. Accuracy (after epoch {val_accuracy["epoch"]}):", end=" ")
+        print(f"overall: {val_accuracy["overall"]:.3f}", end=" ")
+        print(f"noncopy: {val_accuracy["noncopy"]:.3f}", end=" ")
         for dist in np.unique(distribution):
-                val_accuracy[dist] = np.mean(scores[distribution==dist])
+                val_accuracy[dist] = np.mean(scores[(distribution==dist) & (~copy)])
                 print(f"{dist}-distribution: {val_accuracy[dist]:.3f},", end=" ")
         print("\n")
         val_accuracy_by_epoch.append(val_accuracy)

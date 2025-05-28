@@ -267,14 +267,15 @@ def get_unique_problems_counterfactual_analogy():
     lewis_mitchell["problem"] = lewis_mitchell["problem"].apply(lambda x: " ".join(x))
     return lewis_mitchell["problem"].unique()
 
-
+# TODO: For generalization types (i.e., group and interleave), only apply generalization to the query, not the study example
 def generate_dataset(
         transformations: dict,
         permutation_levels: list=[0, 2, 5, 10, 20], 
         prob_lengths: list=[2,3,4,5,6],
         n_reshuffle: int=50,
         alphabets_per_perm_level: int=1,
-        n_study: int=3
+        n_study: int=3,
+        copy=False
         ) -> pd.DataFrame:
     
     """Generate a dataset of letter string analogies and save them to train and val folders.
@@ -282,10 +283,11 @@ def generate_dataset(
 
     Args:
         transformations dict: integer of transformation [int]: transformation [function].
-        permutation_levels (list, optional): How many letters each subset . Defaults to [1, 2, 5, 10, 20].
-        prob_lengths (list, optional): Which query lengths should be included. For example, query a b c -> ? has length 3. Defaults to [2,3,4,5,6].
-        n_study (int, optional): How many study examples should be included? Defaults to 1.
-        n_reshuffle (int, optional): How many times to reshuffle to get new query-study example pairs. Defaults to 50
+        permutation_levels (list, optional): How many letters each subset . Default: [0, 2, 5, 10, 20].
+        prob_lengths (list, optional): Which query lengths should be included. For example, query a b c -> ? has length 3. Default: [2,3,4,5,6].
+        n_study (int, optional): How many study examples should be included? Default: 1.
+        n_reshuffle (int, optional): How many times to reshuffle to get new query-study example pairs. Default: 50.
+        copy (bool, optional): Whether to include an example for each query where the study example (query + solution) is the same as the query. Default: False.
     Returns:
         pd.DataFrame: Dataframe with columns: n_perm, alphabet, transformation, query, study.
     """
@@ -337,6 +339,12 @@ def generate_dataset(
                 break
     # drop rows where problem is one of the study examples:
     dataset = dataset[~dataset.apply(lambda row: row["problem"] in row["study"], axis=1)]
+    dataset["copy"] = False
+    if copy:
+        copy_ds = dataset.copy(deep=True)
+        copy_ds.study = copy_ds.problem
+        copy_ds["copy"] = True
+        dataset = pd.concat([dataset, copy_ds])
     return dataset
 
 
@@ -453,7 +461,7 @@ STD_GENERALIZATION_TYPES = {
 }
 
 
-def demo(sequence: list, alphabet: list= list(string.ascii_lowercase)):
+def demo(sequence: list, alphabet: list=list(string.ascii_lowercase)):
     print(f"Examples with sequence {' '.join(sequence)}")
     print(f"Using alphabet: {' '.join(alphabet)}\n")
     for key, trans in ALL_TRANSFORMATIONS.items():
@@ -486,6 +494,7 @@ def main():
     parser.add_argument('--alphabets_per_perm_level', default=5, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 5.')
     parser.add_argument('--study_examples', default=1, type=int, help='How many study examples to show per problem. Default is 1.')
     parser.add_argument('--query_overlap', default=False, action='store_true', help="Whether or not to allow the same queries (with different study examples) to appear in all training splits.")
+    parser.add_argument('--copy', default=False, action='store_true', help="Whether or not to include copy only tasks (examples where query is included in the study examples).")
     args = parser.parse_args()
     
     # set seeds for reproducibility:
@@ -499,7 +508,8 @@ def main():
         permutation_levels=perm_levels,
         n_reshuffle=args.n_reshuffle,
         alphabets_per_perm_level=args.alphabets_per_perm_level,
-        n_study=args.study_examples
+        n_study=args.study_examples,
+        copy=args.copy
     )
     # create directory if it doesnt exist yet
     if not os.path.exists(args.data_dir):

@@ -94,11 +94,13 @@ def evaluate_predictions(dataloader: torch.utils.data.DataLoader, model, max_len
     scores = []
     transformation_types = []
     distribution = []
+    copy_task = []
     for batch in tqdm(dataloader, desc="Evaluating predicted solutions"): # each batch
         predictions = predict(batch, model, dataloader.dataset.langs, max_length, eval_type=eval_type)
         batch_scores = [pred==yq for pred, yq in zip(predictions, batch["yq"])]
         scores += batch_scores
         transformation_types += batch["transformation"]
         distribution += batch["distribution"]
+        copy_task += batch["copy"]
 
-    return np.array(scores), np.array(transformation_types), np.array(distribution)
+    return np.array(scores), np.array(transformation_types), np.array(distribution), np.array(copy_task)
