@@ -7,12 +7,11 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-import checkpoint
-import datasets as dat
+from checkpoint import CheckPoint, TrainConfig
+from datasets import LetterStringDataset
 from evaluate import evaluate_loss, evaluate_predictions
-from model import MLC
+from model import MLC, MLCConfig
 from timing import timeSince
-from dataclasses import dataclass
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -73,87 +72,95 @@ def main():
     parser.add_argument('--print_batches', default=False, action='store_true', help='print the 1st, 25th, and thereafter every 100th batch for debugging')
 
     args = parser.parse_args()
-    model_save_path = f"{args.dir_model}/{args.filename_model}"
-    
+    train_config = TrainConfig(
+        args.filename_model,
+        args.dir_model,
+        args.dir_data,
+        args.batch_size,
+        args.batching_method,
+        args.query_first,
+        args.nepochs,
+        args.lr,
+        args.lr_end_factor,
+        args.lr_warmup,
+        args.save_best,
+        args.save_best_skip,
+    )
+    # initialize datasets and dataloaders:
+    D_train = LetterStringDataset(
+        data_dir=train_config.dir_data, 
+        mode="train", 
+        batching_method=train_config.batching_method, 
+        batch_size=train_config.batch_size, 
+        query_first=train_config.query_first
+    )
+    train_dataloader = DataLoader(D_train, batch_sampler=D_train.sampler, collate_fn=D_train.collate_fn)
+    D_val = LetterStringDataset(
+        data_dir=train_config.dir_data, 
+        mode="val", 
+        batching_method=train_config.batching_method, 
+        batch_size=5000, 
+        query_first=train_config.query_first
+    )
+    val_dataloader = DataLoader(D_val, batch_sampler=D_val.sampler, collate_fn=D_val.collate_fn)
+    print(f"Using datasets from directory {train_config.dir_data}:")
+    print(D_train)
+    print(D_val)
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
+
+    # setup model:
+    mlc_config = MLCConfig(
+        hidden_size=args.emb_size, 
+        input_size=D_train.langs['input'].n_symbols, 
+        output_size=D_train.langs['output'].n_symbols,
+        PAD_idx_input=D_train.langs['input'].PAD_idx, 
+        PAD_idx_output=D_train.langs['output'].PAD_idx,
+        nlayers_encoder=args.nlayers_encoder, 
+        nlayers_decoder=args.nlayers_decoder,
+        nhead=args.nheads,
+        dropout_p=args.dropout,
+        activation= args.act,
+        ff_mult=args.ff_mult
+    )
+
     if args.resume:
         print("Attempting to resume training...")
-        cp = checkpoint.CheckPoint(path=model_save_path, device=DEVICE)
-        # load datasets
-        train_dataloader, val_dataloader = cp.load_dataloaders(data_dir=args.dir_data, val_batch_size=5000)
-        D_train = train_dataloader.dataset
-        D_val = val_dataloader.dataset
-        # setup loss function
-        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
-        # load model, optimizer, scheduler
-        model, optimizer, scheduler_epoch, epoch_start, step = cp.resume_training(args)
-        print(f"Successfully loaded prerequisites.\nResuming training at epoch {epoch_start}.")
-        # set training loop variables that have been recorded previously
-        best_val_loss = cp.checkpoint["best_val_loss"]
-        counter = 0 # num updates since the loss was last reported
-        train_tracker = cp.checkpoint["train_tracker"]
-        val_accuracy_by_epoch = cp.checkpoint["val_accuracy"]
+        cp = CheckPoint.from_pt(f"{train_config.dir_model}/{train_config.filename_model}")
+        # check config compatibility and load everything
+        model, optimizer, scheduler_epoch = cp.resume_training(mlc_config, train_config)
+        print(f"Successfully loaded training components.\nResuming training at epoch {cp.epoch}.")
+    
     # training a new model:
     else: 
-        # initialize datasets and dataloaders:
-        D_train = dat.LetterStringDataset(data_dir=args.dir_data, mode="train", batching_method=args.batching_method, batch_size=args.batch_size, query_first=args.query_first)
-        train_dataloader = DataLoader(D_train, batch_sampler=D_train.sampler, collate_fn=D_train.collate_fn)
-        D_val = dat.LetterStringDataset(data_dir=args.dir_data, mode="val", batching_method=args.batching_method, batch_size=5000, query_first=args.query_first)
-        val_dataloader = DataLoader(D_val, batch_sampler=D_val.sampler, collate_fn=D_val.collate_fn)
-        print(f"Using datasets from directory {args.dir_data}:")
-        print(D_train)
-        print(D_val)
-
-        # setup model:
-        model = MLC(
-            hidden_size=args.emb_size, 
-            input_size=D_train.langs['input'].n_symbols, 
-            output_size=D_train.langs['output'].n_symbols,
-            PAD_idx_input=D_train.langs['input'].PAD_idx, 
-            PAD_idx_output=D_train.langs['output'].PAD_idx,
-            nlayers_encoder=args.nlayers_encoder, 
-            nlayers_decoder=args.nlayers_decoder,
-            nhead=args.nheads,
-            dropout_p=args.dropout,
-            activation= args.act,
-            ff_mult=args.ff_mult
-        )
+        cp = CheckPoint(mlc_config, train_config)
+        model = MLC(**vars(mlc_config))
         model = model.to(device=DEVICE)
         print(model)
 
-        # setup loss function and optimizer:
-        loss_fn = torch.nn.CrossEntropyLoss(ignore_index=D_train.langs['output'].PAD_idx)
-        optimizer = torch.optim.AdamW(model.parameters(),lr=args.lr, betas=(0.9,0.95), weight_decay=0.01)
+        # setup optimizer:
+        optimizer = torch.optim.AdamW(model.parameters(),lr=train_config.lr, betas=(0.9,0.95), weight_decay=0.01)
         if args.lr_warmup:
             print('    with LR warmup ON (1st epoch)')
-            scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-2)
-            nstep_epoch_estimate = math.floor(len(D_train)/args.batch_size)
+            scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=train_config.lr_end_factor, total_iters=train_config.nepochs-2)
+            nstep_epoch_estimate = math.floor(len(D_train)/train_config.batch_size)
             scheduler_warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-4, end_factor=1.0, total_iters=nstep_epoch_estimate)
         else:
             print('    with LR warmup OFF')
-            scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=args.lr_end_factor, total_iters=args.nepochs-1)
+            scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=train_config.lr_end_factor, total_iters=train_config.nepochs-1)
 
-        best_val_loss = float('inf')
-        counter = 0 # num updates since the loss was last reported
-        step = 0
-        train_tracker = []
-        val_accuracy_by_epoch = []
-        epoch_start = 1
-
-    nsteps_estimate = math.ceil(args.nepochs*len(D_train)/args.batch_size)
+    nsteps_estimate = math.ceil(cp.train_config.nepochs*len(D_train)/cp.train_config.batch_size)
+    counter = 0 # num updates since the loss was last reported
     sum_train_loss = 0.
-    # group args in dict for checkpoint saving:
-    params_state = {'langs': D_train.langs, 'emb_size':args.emb_size, 'input_size':D_train.langs['input'].n_symbols, 'output_size':D_train.langs['output'].n_symbols,
-                    'dropout':args.dropout, 'nlayers_encoder':args.nlayers_encoder, 'nlayers_decoder':args.nlayers_decoder,
-                    'nepochs':args.nepochs, 'batch_size':args.batch_size, 'activation':"gelu", 'args':args}
-
     print(f"Training on {DEVICE}.")
     start = time.time()
     
     # training loop:
-    for epoch in range(epoch_start,args.nepochs+1):
-        print("Epoch",epoch,"\n---------------------------------------------------------------")
+    for epoch in range(cp.epoch,cp.train_config.nepochs+1):
+        cp.epoch = epoch
+        print("Epoch",cp.epoch,"\n---------------------------------------------------------------")
 
         for train_batch in train_dataloader:
+            # debug printing:
             if args.print_batches:
                 for i, example in enumerate(train_batch["xq_context"]):
                     print(f"Transformation: [{train_batch["transformation"][i]}], Alphabet: [{train_batch["alphabet"][i]}]")
@@ -162,53 +169,51 @@ def main():
             loss = train(train_batch, model, loss_fn, optimizer)
             sum_train_loss += loss
             counter += 1
-            step += 1  
+            cp.step += 1  
                         
-            if step in [1,25] or step % 100 == 0:
-                # debug printing:
+            if cp.step % 100 == 0:
                 mylr = optimizer.param_groups[0]['lr']
                 avg_train_loss = sum_train_loss / counter
                 # compute validation loss
                 val_loss = evaluate_loss(val_dataloader, model, loss_fn=loss_fn)
-                mytracker = {'epoch':epoch, 'step':step, 'lr':mylr, 'avg_train_loss':avg_train_loss, 'val_loss': val_loss}
-                train_tracker.append(mytracker)
-                prop_finished = step / nsteps_estimate
-                print(f"{timeSince(start, prop_finished)}, Step: {step}, LR: {mylr:.7f}, TrainLoss: {avg_train_loss:.4f}, ValLoss: {val_loss:.4f}")
+                mytracker = {'epoch':cp.epoch, 'step':cp.step, 'lr':mylr, 'avg_train_loss':avg_train_loss, 'val_loss': val_loss}
+                cp.val_loss_hist.append(mytracker)
+                prop_finished = cp.step / nsteps_estimate
+                print(f"{timeSince(start, prop_finished)}, Step: {cp.step}, LR: {mylr:.7f}, TrainLoss: {avg_train_loss:.4f}, ValLoss: {val_loss:.4f}")
                 # update best validation loss
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
+                if val_loss < cp.best_val_loss:
+                    cp.best_val_loss = val_loss
                     # save new best model if specified and epoch is past save_best_skip:
-                    if args.save_best and (epoch > args.nepochs * args.save_best_skip):
-                        checkpoint.save(model_save_path, step, epoch, model, optimizer, scheduler_epoch, train_tracker, val_accuracy_by_epoch, best_val_loss, params_state, is_best=True)
-                # reset training averages
+                    if train_config.save_best and (cp.epoch > train_config.nepochs * train_config.save_best_skip):
+                        cp.save(model, optimizer, scheduler_epoch, is_best=True)
+                # reset running loss sum and counter
                 sum_train_loss = 0.
                 counter = 0
             # if learning rate warm-up, increase learning rate for each step within the first epoch
-            if args.lr_warmup and epoch==1: 
+            if train_config.lr_warmup and cp.epoch==1: 
                 scheduler_warmup.step() 
-        # after each epoch, calculate and save val accuracy:
+        # after each epoch, calculate and save accuracy of generated predictions on val:
         scores, trans_types, distribution, copy = evaluate_predictions(val_dataloader, model, max_length=val_dataloader.dataset.yq_max+5, eval_type="max")
         val_accuracy = dict()
-        val_accuracy["epoch"] = epoch
+        val_accuracy["epoch"] = cp.epoch
         val_accuracy["overall"] = np.mean(scores)
-        noncopy_scores = scores[~copy]
         val_accuracy["copy"] = np.mean(scores[copy])
         val_accuracy["noncopy"] = np.mean(scores[~copy])
         for trans in np.unique(trans_types):
             val_accuracy[trans] = np.mean(scores[(trans_types==trans) & (~copy)])
-        print(f"Val. Accuracy (after epoch {val_accuracy["epoch"]}):", end=" ")
-        print(f"overall: {val_accuracy["overall"]:.3f}", end=" ")
-        print(f"noncopy: {val_accuracy["noncopy"]:.3f}", end=" ")
+        print(f"Val. Accuracy (after epoch {val_accuracy['epoch']}):", end=" ")
+        print(f"overall: {val_accuracy['overall']:.3f}", end=" ")
+        print(f"noncopy: {val_accuracy['noncopy']:.3f}", end=" ")
         for dist in np.unique(distribution):
                 val_accuracy[dist] = np.mean(scores[(distribution==dist) & (~copy)])
                 print(f"{dist}-distribution: {val_accuracy[dist]:.3f},", end=" ")
         print("\n")
-        val_accuracy_by_epoch.append(val_accuracy)
+        cp.val_acc_hist.append(val_accuracy)
         
         # after each epoch, adjust the general learning rate
-        if epoch>1 or not args.lr_warmup: 
+        if cp.epoch > 1 or not train_config.lr_warmup: 
             scheduler_epoch.step()
-        checkpoint.save(model_save_path, step, epoch, model, optimizer, scheduler_epoch, train_tracker, val_accuracy_by_epoch, best_val_loss,params_state)
+        cp.save(model, optimizer, scheduler_epoch)
     print('Training complete.')
 
 

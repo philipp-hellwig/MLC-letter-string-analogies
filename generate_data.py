@@ -10,7 +10,6 @@ import pandas as pd
 from tqdm import tqdm
 
 
-SEED=42
 # ---------------------------------------------------------------------------------------------
 #                                  Overview of Transformations
 # ---------------------------------------------------------------------------------------------
@@ -29,15 +28,15 @@ SEED=42
 # 10.	Fix alphabetic sequence + extend sequence (a b c w -> a b c d e)
 #
 # Transformations only present in validation/ test splits:
-# 11. Remove Redundant + Sort (a d d c b e -> a b c d e)
-# 12. Extend Sequence + Predecessor (b c d e -> a c d e f)
-# 13. Fix alphabetic sequence + Interleave (a f b f c f w f e -> a f b f c f d f e)
-# 14. Extend sequence + Group (aa bb cc dd -> aa bb cc dd ee)
-# 15. Extend Sequence + Extend Sequence + Successor (a b c d -> a b c d e g)
-# 16. Fix alphabetic Sequence + Predecessor + Successor (a b c w e -> a a c d f)
-# 17. Reverse (a b c d -> d c b a)
-# 18. Shift (a b c d -> e f g h)
-# 19. Replicate (a b c d -> a b c d a b c d)
+# 11.   Remove Redundant + Sort (a d d c b e -> a b c d e)
+# 12.   Extend Sequence + Predecessor (b c d e -> a c d e f)
+# 13.   Fix alphabetic sequence + Interleave (a f b f c f w f e -> a f b f c f d f e)
+# 14.   Extend sequence + Group (aa bb cc dd -> aa bb cc dd ee)
+# 15.   Extend Sequence + Extend Sequence + Successor (a b c d -> a b c d e g)
+# 16.   Fix alphabetic Sequence + Predecessor + Successor (a b c w e -> a a c d f)
+# 17.   Reverse (a b c d -> d c b a)
+# 18.   Shift (a b c d -> e f g h)
+# 19.   Replicate (a b c d -> a b c d a b c d)
 # ---------------------------------------------------------------------------------------------
 
 
@@ -413,6 +412,8 @@ def dataset_to_disk(
     n = train.shape[0] + val.shape[0] + test.shape[0]
     print(f"{train.shape[0]:,} ({train.shape[0]/n*100:.1f}%) training-, {val.shape[0]:,} ({val.shape[0]/n*100:.1f}%) validation-, and {test.shape[0]:,} ({test.shape[0]/n*100:.1f}%) test problems written to disk.\nDone.")
 
+
+SEED=42
 
 ALL_TRANSFORMATIONS = {
     1: extend_sequence,

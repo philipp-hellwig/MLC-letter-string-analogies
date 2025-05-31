@@ -1,13 +1,28 @@
 import numpy as np
 import torch
 from torch.distributions import Categorical
-import torch.functional as F
 import torch.utils.data
 from tqdm import tqdm
 
 import datasets
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+@torch.no_grad()
+def batch_loss(batch, model, loss_fn):
+    """Evaluate loss for a given batch"""
+    model.eval()
+    decoder_output = model(batch['yq_io_padded'], batch) # b*nq x max_length x output_size    
+    logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch*max_len, output_size)
+    loss = loss_fn(logits_flat, batch['yq_padded'].reshape(-1))
+    return loss.cpu().item()
+
+
+def evaluate_loss(dataloader: torch.utils.data.DataLoader, model, loss_fn=None):
+    """Compute average loss over (validation) dataset contained in the dataloader."""
+    batch_losses = [batch_loss(batch, model, loss_fn) for batch in dataloader]
+    return np.mean(batch_losses)
 
 
 @torch.no_grad()
@@ -63,39 +78,23 @@ def predict(
     return (yq_predict, all_logits) if return_logits else yq_predict
 
 
-def evaluate_loss(dataloader: torch.utils.data.DataLoader, model, loss_fn=None):
-    """Compute average loss over (validation) dataset contained in the dataloader."""
-    batch_losses = [batch_loss(batch, model, loss_fn) for batch in dataloader]
-    return np.mean(batch_losses)
-
-
-@torch.no_grad()
-def batch_loss(batch, model, loss_fn):
-    """Evaluate loss for a given batch"""
-    model.eval()
-    decoder_output = model(batch['yq_io_padded'], batch) # b*nq x max_length x output_size    
-    logits_flat = decoder_output.reshape(-1, decoder_output.shape[-1]) # (batch*max_len, output_size)
-    loss = loss_fn(logits_flat, batch['yq_padded'].reshape(-1))
-    return loss.cpu().item()
-
-
-def evaluate_predictions(dataloader: torch.utils.data.DataLoader, model, max_length: int, eval_type='max') -> tuple:
+def evaluate_predictions(dataloader: torch.utils.data.DataLoader, model, max_length: int, eval_type='max', verbose=True) -> tuple:
     """Evaluates whether model predictions exactly match the solutions across entire data set.
 
     Args:
         dataloader (torch.DataLoader): dataloader build from datasets.LetterStringDataset
         model (model.MLC): MLC model
         max_length (int): maximum output length for each problem
-        eval_type (str, optional): "max": take the maximum token of the logits, "sample" sample from the logit distribution. Defaults to 'max'.
-
+        eval_type (str, optional): "max": take the maximum token of the logits, "sample" sample from the logit distribution. Default: 'max'.
+        verbose(bool, optional): Whether or not to show the progress bar. Default: True.
     Returns:
-        tuple: A tuple of a lists of scores (True/False) and transformation types (successor, sort, etc.) for each problem.
+        tuple[np.array]: A tuple of a np.array's of scores (True/False), transformation types (successor, sort, etc.), distribution type and copy study example or not for each problem.
     """
     scores = []
     transformation_types = []
     distribution = []
     copy_task = []
-    for batch in tqdm(dataloader, desc="Evaluating predicted solutions"): # each batch
+    for batch in tqdm(dataloader, desc="Evaluating predicted solutions", disable= not verbose): # each batch
         predictions = predict(batch, model, dataloader.dataset.langs, max_length, eval_type=eval_type)
         batch_scores = [pred==yq for pred, yq in zip(predictions, batch["yq"])]
         scores += batch_scores

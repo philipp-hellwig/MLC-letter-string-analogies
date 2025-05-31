@@ -45,7 +45,8 @@ class Lang:
             torch.LongTensor: LongTensor of length [m or m+1(in case `add_eos`=True) ] which contains the token index (integer) for each symbol (plus EOS if appropriate).
         """
         symbols = copy(symbols)
-        if add_eos: symbols.append(EOS_token)
+        if add_eos: 
+            symbols.append(EOS_token)
         indices = [self.symbol2index[s] for s in symbols]
         output = torch.tensor(indices, dtype=torch.int64)
         return output

@@ -1,121 +1,210 @@
+from dataclasses import dataclass, asdict
 import torch
 from torch.utils.data import DataLoader
 import torch.optim
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-import model
-import datasets as dat
+from model import MLC, MLCConfig
+from datasets import LetterStringDataset
+
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+@dataclass
+class TrainConfig:
+    filename_model: str
+    dir_model: str
+    dir_data: str
+    batch_size: int
+    batching_method: str
+    query_first: bool
+    nepochs: int
+    lr: float
+    lr_end_factor: int
+    lr_warmup: bool
+    save_best: bool
+    save_best_skip: float
 
 
 class CheckPoint:
-    def __init__(self, path: str, device: torch.device):
-        self.model_path = path
-        self.checkpoint = torch.load(path, map_location=device, weights_only=False)
-        self.train_stats = pd.DataFrame(self.checkpoint["train_tracker"])
-        self.device = device
-        self.args = vars(self.checkpoint["args"])
-    
-    def check_compatibility(self, command_line_args):
-        for (saved_key, saved_value), (current_key, current_value) in zip(vars(self.checkpoint["args"]).items(), vars(command_line_args).items()):
-            if saved_key != "resume":
-                assert saved_value==current_value, f"Saved argument ({saved_key}={saved_value}) and current argument({current_key}={current_value}) mismatch! Failed to load model."
-        return True
+    def __init__(self, mlc_config: MLCConfig, train_config: TrainConfig):
+        self.train_config = train_config
+        self.mlc_config = mlc_config
+        self.best_val_loss = float('inf')
+        self.loss_hist = []
+        self.val_acc_hist = []
+        self.save_path = f"{train_config.dir_model}/{train_config.filename_model}"
+        self.epoch = 1
+        self.step = 0
+        self.net_state_dict = None
+        self.optimizer_state_dict = None
+        self.scheduler_epoch_state_dict = None
 
-    def load_dataloaders(self, data_dir="data", verbose: bool=True, val_batch_size=25, use_datasets=["train","val"]) -> tuple:            
+    def check_compatibility(self, current_mlc_config, current_train_config):
+        if current_mlc_config == self.mlc_config and current_train_config == self.train_config:
+            return True
+        else:
+            mismatches = []
+            saved_train = asdict(self.train_config)
+            current_train = asdict(current_train_config)
+            for k in saved_train:
+                if saved_train[k] != current_train.get(k):
+                    mismatches.append(f"TrainConfig: {k}: checkpoint={saved_train[k]}, current={current_train.get(k)}")
+            saved_mlc = asdict(self.mlc_config)
+            current_mlc = asdict(current_mlc_config)
+            for k in saved_mlc:
+                if saved_mlc[k] != current_mlc.get(k):
+                    mismatches.append(f"MLCConfig: {k}: checkpoint={saved_mlc[k]}, current={current_mlc.get(k)}")
+            msg = "Config mismatches found:\n" + "\n".join("  " + m for m in mismatches)
+            raise AssertionError(msg)
+
+    def load_dataloaders(self, data_dir="data", verbose: bool = True, val_batch_size=25, use_datasets=["train", "val"]) -> tuple:
         """Load and return train, validation, and test DataLoaders"""
         dataloaders = []
         for dataset in use_datasets:
-            ds = dat.LetterStringDataset(data_dir=data_dir, mode=dataset, batching_method=self.args["sampling_method"], batch_size=self.checkpoint["batch_size"], query_first=self.args["query_first"])
-            dataloader = DataLoader(ds,batch_size=self.checkpoint["batch_size"], collate_fn=ds.collate_fn)
+            ds = LetterStringDataset(
+                data_dir=data_dir,
+                mode=dataset,
+                batching_method=self.train_config.batching_method,
+                batch_size=self.train_config.batch_size if dataset != "val" else val_batch_size,
+                query_first=self.train_config.query_first,
+            )
+            dataloader = DataLoader(ds, batch_sampler=ds.sampler, collate_fn=ds.collate_fn)           
             dataloaders.append(dataloader)
         if verbose:
             print("Loaded following dataloaders:")
-            print(",\n".join([f'{dataset} dataloader (n={len(dataloader.dataset):,})'for dataset, dataloader in zip(use_datasets, dataloaders)]))
-        return tuple(dataloaders)
+            print(",\n".join([f"{dataset} dataloader (n={len(dataloader.dataset):,})" for dataset, dataloader in zip(use_datasets, dataloaders)]))
+        return dataloaders
 
-    def load_optimizer(self, model, optimizer_class=torch.optim.AdamW, **kwargs):
-        optimizer = optimizer_class(model.parameters(), lr=self.args["lr"], betas=(0.9,0.95), weight_decay=0.01, **kwargs)
-        optimizer.load_state_dict(self.checkpoint['optimizer_state_dict'])
+    def load_optimizer(self, model, optimizer_class=torch.optim.AdamW):
+        optimizer = optimizer_class(
+            model.parameters(),
+            lr=self.train_config.lr,
+            betas=(0.9, 0.95),
+            weight_decay=0.01
+        )
+        optimizer.load_state_dict(self.optimizer_state_dict)
         return optimizer
 
-    def load_scheduler(self, optimizer, scheduler_class=torch.optim.lr_scheduler.LinearLR, **kwargs):
-        scheduler = scheduler_class(optimizer, start_factor=1.0, end_factor=self.args["lr_end_factor"], total_iters=self.args["nepochs"]-1)
-        scheduler.load_state_dict(self.checkpoint['scheduler_epoch_state_dict'])
+    def load_scheduler(self, optimizer, scheduler_class=torch.optim.lr_scheduler.LinearLR):
+        scheduler = scheduler_class(
+            optimizer,
+            start_factor=1.0,
+            end_factor=self.train_config.lr_end_factor,
+            total_iters=self.train_config.nepochs - 1,
+        )
+        scheduler.load_state_dict(self.scheduler_epoch_state_dict)
         return scheduler
-    
-    def load_model(self, verbose: bool=True) -> model.MLC:
+
+    def load_model(self, verbose: bool = True) -> MLC:
         """Load MLC model"""
-        # Initialize model architecture:         
-        net = model.MLC(
-            hidden_size=self.checkpoint['emb_size'], 
-            input_size=self.checkpoint['langs']['input'].n_symbols, 
-            output_size=self.checkpoint['langs']['output'].n_symbols,
-            PAD_idx_input=self.checkpoint["langs"]['input'].PAD_idx, 
-            PAD_idx_output=self.checkpoint["langs"]['output'].PAD_idx,
-            nlayers_encoder=self.checkpoint['nlayers_encoder'], 
-            nlayers_decoder=self.checkpoint['nlayers_decoder'], 
-            dropout_p=self.checkpoint['dropout'], 
-            activation=self.checkpoint['activation']
-        ) 
-        # load trained parameters:    
-        nets_state_dict = self.checkpoint['nets_state_dict']
-        net.load_state_dict(nets_state_dict)
-        net = net.to(device=self.device)
+        # Initialize model architecture:
+        net = MLC(**vars(self.mlc_config))
+        # load trained parameters:
+        net.load_state_dict(self.net_state_dict)
+        net = net.to(device=DEVICE)
         if verbose:
-            best_val_loss = -float('inf')
-            if 'best_val_loss' in self.checkpoint: best_val_loss = self.checkpoint['best_val_loss']
-            print('Loading model that has completed (or started) ' + str(self.checkpoint['epoch']) + ' of ' + str(self.checkpoint['nepochs']) + ' epochs')
-            print('\tbatch size:', self.checkpoint['batch_size'])
-            print(f"\tnumber of steps:{self.checkpoint['step']:,}")
-            print('\tbest val loss achieved: {:.4f}'.format(best_val_loss))
+            print(f"Loading model that has completed {self.epoch} of {self.train_config.nepochs} epochs")
+            print(f"\tbatch size: {self.train_config.batch_size}")
+            print(f"\tnumber of steps: {self.step:,}")
+            print(f"\tbest val loss achieved: {self.best_val_loss:.4f}")
             print(net)
         return net
 
-    def resume_training(self, command_line_args):
-        if self.check_compatibility(command_line_args):
-            model = self.load_model()
+    def resume_training(self, mlc_config, train_config):
+        if self.check_compatibility(mlc_config, train_config):
+            model = self.load_model(DEVICE)
             optimizer = self.load_optimizer(model)
             scheduler = self.load_scheduler(optimizer)
-            epoch = self.checkpoint['epoch'] + 1
-            step = self.checkpoint['step']
-            return model, optimizer, scheduler, epoch, step
-    
-    def plot_learning_rate(self, ax) -> plt.Axes:
-        lr_plot = sns.lineplot(data=self.train_stats, x="step", y="lr", ax=ax)
-        return lr_plot
+            self.epoch += 1
+            return model, optimizer, scheduler
 
-    def plot_loss(self, ax) -> plt.Axes:
-        loss_data = pd.melt(self.train_stats, id_vars=['step'], value_vars=['avg_train_loss','val_loss'], var_name="loss")
-        loss_data["loss"] = loss_data["loss"].str.replace("_loss", "")
-        loss_plot = sns.lineplot(data=loss_data, x='step', y='value', hue='loss', ax=ax)
-        return loss_plot
+    def save(self, model, optimizer, scheduler_epoch, is_best=False, save_path:str=None):
+        self.net_state_dict = model.state_dict()
+        self.optimizer_state_dict = optimizer.state_dict()
+        self.scheduler_epoch_state_dict = scheduler_epoch.state_dict()
+        if save_path is None:
+            if is_best:
+                s = self.save_path.rsplit(".", 1)  # split off extension
+                save_path = s[0] + "_best." + s[1]
+                print("> Saving new *best* model as", save_path, end="")
+            else:
+                save_path = self.save_path
+        if not is_best:
+            print("> Saving model as", save_path, end="")
+        state = vars(self).copy()
+        state["train_config"] = asdict(self.train_config)
+        state["mlc_config"] = asdict(self.mlc_config)
+        torch.save(state, save_path)
+        print(" < Done. >")
 
+    @classmethod
+    def from_pt(cls, path: str):
+        state = torch.load(path, DEVICE, weights_only=False)
+        saved_train_config = TrainConfig(**state["train_config"])
+        saved_mlc_config = MLCConfig(**state["mlc_config"])
+        cp = CheckPoint(saved_mlc_config, saved_train_config)
+        filtered_state = {k: v for k, v in state.items() if k not in ("train_config", "mlc_config")}
+        cp.__dict__.update(filtered_state)
+        return cp
 
-def save(fn_out_model, step, epoch, net, optimizer, scheduler_epoch, train_tracker, val_accuracies, best_val_loss, params, is_best=False):
-    # Input
-    #  fn_out_model : filename for saving the model
-    #  step : number of gradient steps
-    # ..
-    #  train_tracker : array that stores losses over training
-    #  best_val_loss : best validation loss so far (if using --save_best)
-    #  params : list of hyperpameters
-    #  is_best : special filename if best file so far  ... 'filename_best.pt'
-    if is_best:
-        s = fn_out_model.rsplit('.',1) # split off extension 
-        fn_out_model = s[0] + '_best.' + s[1]
-        print('> Saving new *best* model as',fn_out_model, end='')
-    else:
-        print('> Saving model as',fn_out_model, end='')
-    state = {'step' : step,
-            'epoch' : epoch,
-            'nets_state_dict' : net.state_dict(),
-            'optimizer_state_dict' : optimizer.state_dict(),
-            'scheduler_epoch_state_dict' : scheduler_epoch.state_dict(),
-            'train_tracker' : train_tracker,
-            'val_accuracy' : val_accuracies,
-            'best_val_loss' : best_val_loss}
-    state.update(params)
-    torch.save(state, fn_out_model)
-    print(' < Done. >')
+    @classmethod
+    def update_version(cls, current_path: str, data_dir: str, save_path: str):
+        """Updates version of .pt file to be compatible with new CheckPoint implementation.
+
+        Args:
+            current_path (str): the current_path to the .pt file
+            data_dir (str): the path to the data directory the model was trained on
+            save_path (str): the path to which the model should be saved
+            device (str): _description_
+        """
+        cp_state = torch.load(current_path, map_location=DEVICE, weights_only=False)
+        args = cp_state["args"]
+        if args.sampling_method:
+            args.batching_method = args.sampling_method
+        train_config = TrainConfig(
+            args.filename_model,
+            args.dir_model,
+            args.dir_data,
+            args.batch_size,
+            args.batching_method,
+            args.query_first,
+            args.nepochs,
+            args.lr,
+            args.lr_end_factor,
+            args.lr_warmup,
+            args.save_best,
+            args.save_best_skip,
+        )
+        D_train = LetterStringDataset("train", data_dir=data_dir)
+        # setup model:
+        mlc_config = MLCConfig(
+            hidden_size=args.emb_size, 
+            input_size=D_train.langs['input'].n_symbols, 
+            output_size=D_train.langs['output'].n_symbols,
+            PAD_idx_input=D_train.langs['input'].PAD_idx, 
+            PAD_idx_output=D_train.langs['output'].PAD_idx,
+            nlayers_encoder=args.nlayers_encoder, 
+            nlayers_decoder=args.nlayers_decoder,
+            nhead=args.nheads,
+            dropout_p=args.dropout,
+            activation= args.act,
+            ff_mult=args.ff_mult
+        )
+        cp = CheckPoint(mlc_config, train_config)
+
+        cp.best_val_loss = cp_state["best_val_loss"]
+        cp.loss_hist = cp_state["train_tracker"]
+        cp.val_acc_hist = cp_state["val_accuracy"]
+        cp.step = cp_state["step"]
+        cp.epoch = cp_state["epoch"]
+        cp.net_state_dict = cp_state["nets_state_dict"]
+        cp.optimizer_state_dict = cp_state["optimizer_state_dict"]
+        cp.scheduler_epoch_state_dict = cp_state["scheduler_epoch_state_dict"]
+
+        model, optimizer, scheduler_epoch = cp.resume_training(mlc_config, train_config)
+        cp.save(model, optimizer, scheduler_epoch, save_path=save_path)
+
+    def __str__(self):
+        return f"### MLC Config\n{''.join(['-' for _ in range(80)])}\n" + \
+                f"{'\n'.join([str(key) + ": " + str(item) for key, item in self.mlc_config.__dict__.items()])}\n\n" + \
+                f"### Train Config\n{''.join(['-' for _ in range(80)])}\n" + \
+                f"{'\n'.join([str(key) + ": " + str(item) for key, item in self.train_config.__dict__.items()])}"

@@ -1,11 +1,11 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from dataclasses import dataclass
 import math
 
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
 import datasets as dat
-from evaluate import predict
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -29,6 +29,21 @@ class PositionalEncoding(nn.Module):
         #  Input
         #    token_embedding: [seq_len, batch_size, embedding_dim] list of embedded tokens
         return self.dropout(token_embedding + self.pos_embedding[:token_embedding.size(0), :])
+
+
+@dataclass
+class MLCConfig:
+    hidden_size: int
+    input_size: int
+    output_size: int
+    PAD_idx_input: int
+    PAD_idx_output: int
+    nlayers_encoder: int=5
+    nlayers_decoder: int=3
+    nhead: int=8
+    dropout_p: float=0.1
+    ff_mult: int=4
+    activation: str='gelu'
 
 
 class MLC(nn.Module):
@@ -161,7 +176,6 @@ class MLC(nn.Module):
 
 
 if __name__ == "__main__":
-    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     D_train = dat.LetterStringDataset(data_dir="data", mode="train")
     train_dataloader = DataLoader(D_train,batch_size=5,collate_fn=lambda x:dat.get_mlc_batch(x,D_train.langs),
                                     shuffle=True)
@@ -179,12 +193,4 @@ if __name__ == "__main__":
         PAD_idx_input=pad_in, 
         PAD_idx_output=pad_out
         )
-    net = net.to(device=DEVICE)
-
-    predictions = predict(
-    batch=sample_batch,
-    net=net, 
-    langs=D_train.langs,
-    max_length=20,
-    eval_type="sample"
-    )
+    print(net)

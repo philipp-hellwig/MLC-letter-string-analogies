@@ -63,22 +63,53 @@ def get_alternative_rule(row, check_transformations=[2,3]):
 
 def training_information(checkpoint, val_loader, description="Training information:"):
     print(description)
-    # plot training metrics:
-    fig1, ax1 = plt.subplots(1, 2, figsize=(12,3))
-    ax1[0] = checkpoint.plot_loss(ax1[0])
+    # plot training loss and learning rate:
+    fig1, ax1 = plt.subplots(1, 2, figsize=(12,4))
+    ax1[0] = get_loss_plot(checkpoint, ax1[0])
     _ = ax1[0].set_title("Loss")
-    ax1[1] = checkpoint.plot_learning_rate(ax1[1])
+    ax1[1] = get_lr_plot(checkpoint, ax1[1])
     _ = ax1[1].set_title("Learning Rate")
-    print(f'Best Validation Loss: {checkpoint.checkpoint["best_val_loss"]:.3f}')
+    print(f'Best Validation Loss: {checkpoint.best_val_loss:.3f}')
 
-    fig2, ax2 = plt.subplots(1, 2, figsize=(12,3), width_ratios=(2,3))
-    val_acc = pd.DataFrame(checkpoint.checkpoint["val_accuracy"])
-    val_acc = pd.melt(val_acc, id_vars=['epoch'], value_vars=val_loader.dataset.transformation_types + ["overall"], var_name="transformation", value_name="accuracy")
-    print(f"Best Validation Accuracy: {val_acc.loc[val_acc["transformation"] =="overall","accuracy"].max():.3f}")
-    _ = sns.lineplot(val_acc[val_acc.transformation == "overall"], x="epoch", y="accuracy", color="black", ax=ax2[0])
+    # plot accuracy overall and 
+    fig2, ax2 = plt.subplots(1, 2, figsize=(11,4), width_ratios=(2,3))
+    val_acc = pd.DataFrame(checkpoint.val_acc_hist)
+    val_acc = pd.melt(val_acc, id_vars=['epoch'], value_vars=["in", "out-of", "overall"], var_name="distribution", value_name="accuracy")
+    print(f"Best Validation Accuracy: {val_acc.loc[val_acc["distribution"] =="overall","accuracy"].max():.3f}")
+    _ = sns.lineplot(val_acc[val_acc.distribution == "overall"], x="epoch", y="accuracy", color="black", ax=ax2[0])
     _ = ax2[0].set_title("Overall Accuracy")
-    _ = sns.lineplot(val_acc[val_acc.transformation != "overall"], x="epoch", y="accuracy", hue="transformation", ax=ax2[1])
-    ax2[1].legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
-    _ = ax2[1].set_title("Accuracy by Transformation Type")
+    _ = sns.lineplot(val_acc[val_acc.distribution != "overall"], x="epoch", y="accuracy", style="distribution", ax=ax2[1])
+    _ = ax2[1].legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
+    _ = ax2[1].set_title("Accuracy by Distribution")
 
-    return (fig1, fig2)
+    # plot accuracies by generalization/transformation type
+    val_acc = pd.DataFrame(checkpoint.val_acc_hist)
+    val_acc_by_gen = pd.melt(val_acc, id_vars=['epoch'], value_vars=val_loader.dataset.transformation_types, var_name="transformation", value_name="accuracy")
+    val_acc_by_gen["generalization"] = val_acc_by_gen.transformation.apply(lambda x: generate_data.STD_GENERALIZATION_TYPES[x])
+
+    fig3, ax3 = plt.subplots(3, 1, figsize=(10,16))
+    for i, gen_type in enumerate([0,2,3]):
+        _ = sns.lineplot(data=val_acc_by_gen[val_acc_by_gen.generalization==gen_type], x="epoch", y="accuracy", hue="transformation", ax=ax3[i])
+        _ = ax3[i].set_title(f"Validation accuracy generalization type {gen_type}")
+        _ = ax3[i].legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
+
+    return (fig1, fig2, fig3)
+
+
+def get_lr_plot(checkpoint, ax) -> plt.Axes:
+    loss_hist = pd.DataFrame(checkpoint.loss_hist)
+    lr_plot = sns.lineplot(data=loss_hist, x="step", y="lr", ax=ax)
+    return lr_plot
+
+
+def get_loss_plot(checkpoint, ax) -> plt.Axes:
+    loss_hist = pd.DataFrame(checkpoint.loss_hist)
+    loss_hist = pd.melt(
+        loss_hist,
+        id_vars=["step"],
+        value_vars=["avg_train_loss", "val_loss"],
+        var_name="loss",
+    )
+    loss_hist["loss"] = loss_hist["loss"].str.replace("_loss", "")
+    loss_plot = sns.lineplot(data=loss_hist, x="step", y="value", hue="loss", ax=ax)
+    return loss_plot
