@@ -1,7 +1,9 @@
 from dataclasses import dataclass, asdict
+
 import torch
 from torch.utils.data import DataLoader
 import torch.optim
+import pandas as pd
 
 from model import MLC, MLCConfig
 from datasets import LetterStringDataset
@@ -204,7 +206,24 @@ class CheckPoint:
         cp.save(model, optimizer, scheduler_epoch, save_path=save_path)
 
     def __str__(self):
-        return f"### MLC Config\n{''.join(['-' for _ in range(80)])}\n" + \
-                f"{'\n'.join([str(key) + ": " + str(item) for key, item in self.mlc_config.__dict__.items()])}\n\n" + \
-                f"### Train Config\n{''.join(['-' for _ in range(80)])}\n" + \
-                f"{'\n'.join([str(key) + ": " + str(item) for key, item in self.train_config.__dict__.items()])}"
+        val_acc = pd.DataFrame(self.val_acc_hist)
+        val_acc = pd.melt(val_acc, id_vars=['epoch'], value_vars=["in", "out-of", "overall"], var_name="distribution", value_name="accuracy")
+        max_overall_acc = val_acc.loc[val_acc["distribution"] =="overall","accuracy"].max()
+        max_id_acc = val_acc.loc[val_acc["distribution"] =="in","accuracy"].max()
+        max_ood_acc = val_acc.loc[val_acc["distribution"] =="out-of","accuracy"].max()
+        return (
+            "### MLC Config\n\n"
+            + "```\n"
+            + "\n".join([f"{key}: {item}" for key, item in self.mlc_config.__dict__.items()])
+            + "\n```\n\n"
+            + "### Train Config\n\n"
+            + "```\n"
+            + "\n".join([f"{key}: {item}" for key, item in self.train_config.__dict__.items()])
+            + "\n```"
+            + "\n\n"
+            + "### Training Run\n\n"
+            + f"Trained for {self.epoch-1} out of {self.train_config.nepochs} epochs."
+            + "\n\n"
+            + f"Best Val. Loss: {self.best_val_loss:.3f}\n\n"
+            + f"Highest Val. Accuracy: {max_overall_acc:.3f}, in-distribution: {max_id_acc:.3f}, out-of-distribution: {max_ood_acc:.3f}"
+        )

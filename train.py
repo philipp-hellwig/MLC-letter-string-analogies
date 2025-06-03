@@ -22,8 +22,8 @@ def train(batch: defaultdict, model: MLC, loss_fn, optimizer) -> float:
     Args:
         batch (defaultdict): A dictionary that represents a batch of letter-string problems.
         model (MLC): MLC seq2seq encoder-decoder.
-        loss_fn (_type_): loss function (typically torch.nn.CrossEntropyLoss)
-        optimizer (_type_): optimizer (typically torch.optim.adamw)
+        loss_fn: loss function (typically torch.nn.CrossEntropyLoss)
+        optimizer: optimizer (typically torch.optim.adamw)
 
     Returns:
         float: The mean loss of the model predictions for this batch.
