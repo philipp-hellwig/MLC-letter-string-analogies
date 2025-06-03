@@ -18,23 +18,44 @@ tab1, tab2, tab3 = st.tabs(["Model","Training","Predictions"])
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-@st.cache_resource
 def get_setup(path="../models/MLC_all_trans_study1_nep20_lr0_0005_bs64_dr0_2_io_easy_val.pt"):
-
     # Load the model checkpoint (update path as needed)
     cp = CheckPoint.from_pt(path)
     model = cp.load_model(verbose=False)
     model.eval()
-
     val_loader = cp.load_dataloaders("../data/all_transformations_study1", use_datasets=["val"], verbose=False)[0]
-    batch = next(iter(val_loader))
+    return cp, model, val_loader
 
-    predictions, logits = evaluate.predict(batch, model, val_loader.dataset.langs, max_length=val_loader.dataset.yq_max+5, return_logits=True)
-
+@st.cache_data
+def get_predictions_for_filter(model_path, filter_by=None):
+    _, _model, _val_loader = get_setup(model_path)
+    if filter_by is None:
+        _val_loader.dataset.set_filter("unstructured")
+    else:
+        _val_loader.dataset.set_filter("transformation", [filter_by])
+    batch = next(iter(_val_loader))
+    predictions, logits = evaluate.predict(
+        batch, _model, _val_loader.dataset.langs,
+        max_length=_val_loader.dataset.yq_max+5, return_logits=True
+    )
     probs = torch.nn.functional.softmax(logits, dim=1)
-    lang = val_loader.dataset.langs["output"]
+    lang = _val_loader.dataset.langs["output"]
+    return batch, predictions, probs, lang
 
-    return cp, model, val_loader, batch, predictions, probs, lang
+# def get_batched_predictions(dataloader):
+#     batch = next(iter(dataloader))
+#     predictions, logits = evaluate.predict(batch, model, val_loader.dataset.langs, max_length=val_loader.dataset.yq_max+5, return_logits=True)
+#     probs = torch.nn.functional.softmax(logits, dim=1)
+#     lang = val_loader.dataset.langs["output"]
+#     return batch, predictions, probs, lang
+
+
+# def get_predictions_for_filter(val_loader, filter_by):
+#     if filter_by is None:
+#         val_loader.dataset.set_filter("unstructured")
+#     else:
+#         val_loader.dataset.set_filter("transformation", filter_by)
+#     return get_batched_predictions(val_loader)
 
 
 with st.sidebar:
@@ -42,8 +63,7 @@ with st.sidebar:
     model_names = os.listdir(models_dir)
     model_names = [model for model in model_names if "MLC_batch" in model]
     path = models_dir + st.radio("Choose a model:", options=model_names)
-    cp, model, val_loader, batch, predictions, probs, lang = get_setup(path)
-
+    cp, model, val_loader = get_setup(path)
 
 with tab1:
     st.subheader("Model Comparisons")
@@ -66,11 +86,12 @@ with tab2:
 
 
 with tab3:
-    id = st.number_input("Problem in batch", min_value=0, max_value=len(batch["xq_context"])-1, value=0)
-    st.subheader(f"{batch['transformation'][id]}-problem")
-    fig = analysis_utils.plot_token_predictions(id, batch, predictions, probs, [lang.index2symbol[i] for i in range(lang.n_symbols)])
+    filter_by = st.selectbox("Filter dataset by", [None] + val_loader.dataset.transformation_types)
+    batch, predictions, probs, lang = get_predictions_for_filter(path, filter_by)
+    idx = st.number_input("Problem in batch", min_value=0, max_value=len(batch["xq_context"])-1, value=0)
+    st.subheader(f"{batch['transformation'][idx]}-problem")
+    fig = analysis_utils.plot_token_predictions(idx, batch, predictions, probs, [lang.index2symbol[i] for i in range(lang.n_symbols)])
     st.plotly_chart(fig)
-
     st.subheader("Encoder Averaged Attention Activations")
-    enc_attn_fig = analysis_utils.get_encoder_attention_plot(model, batch, idx=id)
+    enc_attn_fig = analysis_utils.get_encoder_attention_plot(model, batch, idx=idx)
     st.pyplot(enc_attn_fig)

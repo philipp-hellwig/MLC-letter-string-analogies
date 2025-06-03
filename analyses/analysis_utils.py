@@ -97,7 +97,10 @@ def training_information(checkpoint, val_loader, description="Training informati
     # plot accuracies by generalization/transformation type
     val_acc = pd.DataFrame(checkpoint.val_acc_hist)
     val_acc_by_gen = pd.melt(val_acc, id_vars=['epoch'], value_vars=val_loader.dataset.transformation_types, var_name="transformation", value_name="accuracy")
-    val_acc_by_gen["generalization"] = val_acc_by_gen.transformation.apply(lambda x: generate_data.STD_GENERALIZATION_TYPES[x])
+    trans2idx = {trans["transformation"]: idx for idx, trans in generate_data.ALL_TRANSFORMATIONS.items()}
+    val_acc_by_gen["generalization"] = val_acc_by_gen.transformation.apply(
+            lambda x: generate_data.ALL_TRANSFORMATIONS[trans2idx[str(x)]]["generalization_type"]
+    )
 
     fig3, ax3 = plt.subplots(3, 1, figsize=(fig_width,16))
     for i, gen_type in enumerate([0,2,3]):

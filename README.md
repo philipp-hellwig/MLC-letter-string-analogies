@@ -65,6 +65,7 @@ You can obtain the datasets in two ways:
     ```python
     python generate_data.py --data_dir "data/all_transformations_study1"
     python generate_data.py --data_dir "data/all_transformations_study3" --study_examples 3
+    python generate_data.py --data_dir "data/all_transformations_study1_incl_copy_fixed_gen" --copy
     ```
     #### Arguments
     ```    

@@ -105,7 +105,7 @@ def sort(prob_letters, *args):
 
 
 # group a problem and its solution by duplicating each letter k times
-def group_problem(problem: list, k: int=None, *args):
+def group(problem: list, k: int=None, **kwargs):
     """Transform problem by repeating each letter k times.
 
     Args:
@@ -121,30 +121,21 @@ def group_problem(problem: list, k: int=None, *args):
 
 
 # interleave a problem and its solution
-def interleave_problem(problem: list, alphabet: list, interleaver: str=None):
+def interleave(problem: list, alphabet: list, interleaver: str=None, **kwargs):
+    p = deepcopy(problem)
     if interleaver is None:
         interleaver = np.random.choice(alphabet)
     source = []
-    for i, letter in enumerate(problem[0]):
+    for i, letter in enumerate(p[0]):
         source.append(letter)
-        if i < (len(problem[0])-1):
+        if i < (len(p[0])-1):
             source.append(interleaver)
     trans = []
-    for i, letter in enumerate(problem[1]):
+    for i, letter in enumerate(p[1]):
         trans.append(letter)
-        if i < (len(problem[1])-1):
+        if i < (len(p[1])-1):
             trans.append(interleaver)
     return [source, trans]
-
-
-# 7. sort and group
-def sort_group(prob_letters, *args):
-    return group_problem(sort(prob_letters))
-
-
-# 8. remove redundant, interleave
-def rr_interleave(prob_letters, *args):
-    return interleave_problem(remove_redundant(prob_letters), *args)
 
 
 # 9. Remove Redundant + successor (a b b c d -> a b c e)
@@ -173,14 +164,9 @@ def extend_pred(prob_letters, *args):
     return [prob_letters, pred(extend_sequence(prob_letters, *args)[1], *args)[1]]
 
 
-# 13. Fix alphabetic sequence + Interleave (a f b f c f w f e -> a f b f c f d f e)
-def fix_interleave(prob_letters, *args):
-    return interleave_problem(fix_alphabetic_seq(prob_letters, *args), *args)
-
-
 # 14. Extend sequence + Group (aa bb cc dd -> aa bb cc dd ee)
 def extend_group(prob_letters, *args):
-    return group_problem(extend_sequence(prob_letters, *args))
+    return group(extend_sequence(prob_letters, *args))
 
 
 # 15. Extend Sequence + Extend Sequence + Successor (a b c d -> a b c d e g)
@@ -214,27 +200,7 @@ def replicate(prob_letters, *args):
     return [prob_letters, list(np.tile(prob_letters, 2))]
 
 
-# 20.
-def fix_succ():
-    ...
-
-
-# 21:
-def fix_pred():
-    ...
-
-
-# 22:
-def sort_succ():
-    ...
-
-
-# 23:
-def sort_pred():
-    ...
-
-
-# used to permute alphabet
+# permutes alphabet
 def k_derange(k, alphabet):
     if k in [0,1]:
         return None, None, alphabet
@@ -306,12 +272,12 @@ def generate_dataset(
                     alphabets_n_perm.append(alph_string)
                     break 
                 
-            for func_idx in transformations.keys():
+            for idx in transformations.keys():
                 problems, query_lengths = [], []
                 for length in prob_lengths:
                     for i in range(len(alphabet)-length+1):
                         try:
-                            query, solution = transformations[func_idx](alphabet[i:i+length+1], alphabet)
+                            query, solution = transformations[idx]["function"](alphabet[i:i+length+1], alphabet)
                             problem = " ".join(query) + " > " + " ".join(solution)
                             problems.append(problem)
                             query_lengths.append(len(query))
@@ -323,14 +289,27 @@ def generate_dataset(
                 study_examples = np.array([np.random.permutation(problems) for _ in range(n_study)])
                 separator = " | "
                 study_examples_joined = np.array([separator.join(study_examples[:, i]) for i in range(study_examples.shape[1])])
+                # apply generalization (group, interleave) to problem if applicable:
+                if transformations[idx]["generalization_function"] is not None:
+                    generalized_problems = []
+                    for problem in problems:
+                        query, solution = problem.split(" > ")
+                        query = query.split()
+                        solution = solution.split()
+                        query, solution = transformations[idx]["generalization_function"]([query, solution], alphabet=alphabet)
+                        problem = " ".join(query) + " > " + " ".join(solution)
+                        generalized_problems.append(problem)
+                    problems = generalized_problems
+                
                 for _ in range(n_reshuffle):
-                    reshuffled_data = pd.DataFrame(
-                        {"n_perm" : [n_perm for _ in range(len(problems))],
-                        "alphabet" : [alph_string for _ in range(len(problems))],
-                        "transformation" : [transformations[func_idx].__name__ for _ in range(len(problems))],
-                        "study" : np.random.permutation(study_examples_joined),
-                        "problem" : problems,
-                        "query_length" : query_lengths
+                    reshuffled_data = pd.DataFrame({
+                            "n_perm" : [n_perm for _ in range(len(problems))],
+                            "alphabet" : [alph_string for _ in range(len(problems))],
+                            "transformation" : [transformations[idx]["transformation"] for _ in range(len(problems))],
+                            "study" : np.random.permutation(study_examples_joined),
+                            "problem" : problems,
+                            "query_length" : query_lengths,
+                            "generalization_type": [transformations[idx]["generalization_type"] for _ in range(len(problems))]
                         })
                     reshuffled_datasets.append(reshuffled_data)
                 dataset = pd.concat([dataset] + reshuffled_datasets, ignore_index=True)
@@ -352,7 +331,8 @@ def dataset_to_disk(
         train_on: list,
         query_overlap=False,
         directory="data", 
-        train_prop: float=0.8
+        train_prop: float=0.8,
+        seed: int=42
         ) -> None:
     """Splits a dataset generated with `generate_dataset` into train, val and test set and writes them to .csv files
 
@@ -367,7 +347,7 @@ def dataset_to_disk(
     dataset[~dataset["problem"].isin(lewis_mitchell_problem_set)]
     dataset["distribution"] = dataset["transformation"].apply(lambda x: "in" if x in train_on else "out-of")
     # shuffle dataset:
-    dataset = dataset.sample(frac=1, random_state=SEED).reset_index(drop=True)
+    dataset = dataset.sample(frac=1, random_state=seed).reset_index(drop=True)
 
     if query_overlap:
         total_n = dataset.shape[0]
@@ -401,9 +381,9 @@ def dataset_to_disk(
         # resize val and test if train set got smaller due to filtering:
         n_nontest = train.shape[0] / train_prop * (1-train_prop)/2
         if n_nontest < val.shape[0]:
-            val = val.sample(frac=n_nontest/val.shape[0], random_state=SEED).reset_index(drop=True)
+            val = val.sample(frac=n_nontest/val.shape[0], random_state=seed).reset_index(drop=True)
         if n_nontest < test.shape[0]:
-            test = test.sample(frac=n_nontest/test.shape[0], random_state=SEED).reset_index(drop=True)
+            test = test.sample(frac=n_nontest/test.shape[0], random_state=seed).reset_index(drop=True)
     
     # save datasets as csv:
     train.to_csv(f"{directory}/train.csv", index=False)
@@ -413,52 +393,122 @@ def dataset_to_disk(
     print(f"{train.shape[0]:,} ({train.shape[0]/n*100:.1f}%) training-, {val.shape[0]:,} ({val.shape[0]/n*100:.1f}%) validation-, and {test.shape[0]:,} ({test.shape[0]/n*100:.1f}%) test problems written to disk.\nDone.")
 
 
-SEED=42
-
 ALL_TRANSFORMATIONS = {
-    1: extend_sequence,
-    2: succ,
-    3: pred,
-    4: remove_redundant,
-    5: fix_alphabetic_seq,
-    6: sort,
-    7: sort_group,
-    8: rr_interleave,
-    9: rr_succ,
-    10: fix_extend,
+    1: {
+        "transformation": "extend_sequence",
+        "function": extend_sequence,
+        "generalization_function": None,
+        "generalization_type": 0
+    },
+    2: {
+        "transformation": "succ",
+        "function": succ,
+        "generalization_function": None,
+        "generalization_type": 0
+    },
+    3: {
+        "transformation": "pred",
+        "function": pred,
+        "generalization_function": None,
+        "generalization_type": 0
+    },
+    4: {
+        "transformation": "remove_redundant",
+        "function": remove_redundant,
+        "generalization_function": None,
+        "generalization_type": 0
+    },
+    5: {
+        "transformation": "fix_alphabetic_seq",
+        "function": fix_alphabetic_seq,
+        "generalization_function": None,
+        "generalization_type": 0
+    },
+    6: {
+        "transformation": "sort",
+        "function": sort,
+        "generalization_function": None,
+        "generalization_type": 0
+    },
+    7: {
+        "transformation": "sort_group",
+        "function": sort,
+        "generalization_function": group,
+        "generalization_type": 0
+    },
+    8: {
+        "transformation": "rr_interleave",
+        "function": remove_redundant,
+        "generalization_function": interleave,
+        "generalization_type": 0
+    },
+    9: {
+        "transformation": "rr_succ",
+        "function": rr_succ,
+        "generalization_function": None,
+        "generalization_type": 0
+    },
+    10: {
+        "transformation": "fix_extend",
+        "function": fix_extend,
+        "generalization_function": None,
+        "generalization_type": 0
+    },
     # val/test only transformations
-    11: rr_sort,
-    12: extend_pred,
-    13: fix_interleave,
-    14: extend_group,
-    15: extend_extend_succ,
-    16: fix_pred_succ,
-    17: reverse,
-    18: shift,
-    19: replicate,
-    # extra transformations not included in the original proposal:
-}
-
-STD_GENERALIZATION_TYPES = {
-    "extend_sequence": 0,
-    "succ": 0,
-    "pred": 0,
-    "remove_redundant": 0,
-    "fix_alphabetic_seq": 0,
-    "sort": 0,
-    "sort_group": 0,
-    "rr_interleave": 0,
-    "rr_succ": 0,
-    "fix_extend": 0,
-    "rr_sort": 2,
-    "extend_pred": 2,
-    "fix_interleave": 2,
-    "extend_group": 2,
-    "extend_extend_succ": 2,
-    "fix_pred_succ": 2,
-    "reverse": 3,
-    "shift": 3,
-    "replicate": 3
+    11: {
+        "transformation": "rr_sort",
+        "function": rr_sort,
+        "generalization_function": None,
+        "generalization_type": 2
+    },
+    12: {
+        "transformation": "extend_pred",
+        "function": extend_pred,
+        "generalization_function": None,
+        "generalization_type": 2
+    },
+    13: {
+        "transformation": "fix_interleave",
+        "function": fix_alphabetic_seq,
+        "generalization_function": interleave,
+        "generalization_type": 2
+    },
+    14: {
+        "transformation": "extend_group",
+        "function": extend_sequence,
+        "generalization_function": group,
+        "generalization_type": 2
+    },
+    15: {
+        "transformation": "extend_extend_succ",
+        "function": extend_extend_succ,
+        "generalization_function": None,
+        "generalization_type": 2
+    },
+    16: {
+        "transformation": "fix_pred_succ",
+        "function": fix_pred_succ,
+        "generalization_function": None,
+        "generalization_type": 2
+    },
+    17: {
+        "transformation": "reverse",
+        "function": reverse,
+        "generalization_function": None,
+        "generalization_type": 3
+    },
+    18: {
+        "transformation": "shift",
+        "function": shift,
+        "generalization_function": None,
+        "generalization_type": 3
+    },
+    19: {
+        "transformation": "replicate",
+        "function": replicate,
+        "generalization_function": None,
+        "generalization_type": 3
+    }
 }
 
 
@@ -471,7 +521,7 @@ def demo(sequence: list, alphabet: list=list(string.ascii_lowercase)):
         print(f"{' '.join(query)} -> {' '.join(target)}\n")
 
 
-def get_transformations(trans: str):
+def get_transformations(trans: str) -> dict:
     match trans: 
         case "all":
             transformations = ALL_TRANSFORMATIONS
@@ -488,6 +538,7 @@ def get_transformations(trans: str):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--transformations', default="all", help='Comma-separated list of integers of transformations to include when generating data (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
+    parser.add_argument('--seed', default=42, type=int, help="random seed for data generation. Default: 42")
     parser.add_argument('--training_transformations', default="train_default", help='Which transformations to include in training set.')
     parser.add_argument('--permutation_levels', default="1,2,5,10,20", help="Comma-seperated list of integers of permutation levels")
     parser.add_argument('--data_dir', default="data/debug", help='The directory in which the data set will be saved')
@@ -499,8 +550,8 @@ def main():
     args = parser.parse_args()
     
     # set seeds for reproducibility:
-    np.random.seed(SEED)
-    random.seed(SEED)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
     transformations = get_transformations(args.transformations)
     perm_levels = [int(lvl) for lvl in args.permutation_levels.split(",")]
 
@@ -518,9 +569,16 @@ def main():
         print(f"Created '{args.data_dir}' directory.")
 
     # get function names that are allowed in training set:
-    train_transformations = [func.__name__ for func in get_transformations(args.training_transformations).values()]
+    train_transformations = get_transformations(args.training_transformations)
+    train_transformation_names = [train_transformations[key]["transformation"] for key in train_transformations]
     # write dataset splits
-    dataset_to_disk(dataset, train_on=train_transformations, query_overlap=args.query_overlap, directory=args.data_dir)
+    dataset_to_disk(
+        dataset, 
+        train_on=train_transformation_names, 
+        query_overlap=args.query_overlap, 
+        directory=args.data_dir, 
+        seed=args.seed
+    )
 
 
 if __name__ == "__main__":

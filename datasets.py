@@ -83,9 +83,12 @@ class BatchSampler(Sampler):
         self.batch_size = batch_size
         self.reshuffle = reshuffle
         self.all_indices = None
+        self.filter = dataset.filter
 
     def __iter__(self):
-        if self.reshuffle or self.all_indices is None:
+        if (self.reshuffle 
+                or self.all_indices is None
+                or self.filter.keys() != self.dataset.filter.keys()):
             self.all_indices = []
             # go through all filters
             for f in self.dataset.filter.keys():
@@ -169,13 +172,20 @@ class LetterStringDataset(Dataset):
         self.data = data.to_dict("records")
         
         # initialize sampling method for obtaining batches from the dataset:
+        self.set_filter(batching_method)
         self.sampler = BatchSampler(self, batch_size=batch_size, reshuffle=self.train)
+
+    def set_filter(self, batching_method: str, include=None):
         match batching_method:
             case "transformation":
                 # accumulate example ids by transformation type:
-                self.filter = {trans: [] for trans in self.transformation_types}
+                if include is None:
+                    self.filter = {trans: [] for trans in self.transformation_types}
+                else:
+                    self.filter = {trans: [] for trans in include}
                 for i, example in enumerate(self.data):
-                    self.filter[example["transformation"]].append(i)
+                    if example["transformation"] in self.filter.keys():
+                        self.filter[example["transformation"]].append(i)
             case "alphabet":
                 # accumulate example ids by alphabet:
                 self.filter = {alph: [] for alph in self.unique_alphabets}
@@ -191,7 +201,7 @@ class LetterStringDataset(Dataset):
                 self.filter = {"all": list(range(len(self.data)))}
             case _ :
                 raise NotImplementedError(f"{batching_method} is an unknown value for the argument batching_method.")
-
+    
     def __len__(self):
         return len(self.data)
 
@@ -199,7 +209,7 @@ class LetterStringDataset(Dataset):
         """Return letter-string problem by `idx`. If `idx` is not given, return a random problem instead."""
         return self.data[idx]
 
-    def collate_fn(self, problems: list[dict]) -> dict:
+    def collate_fn(self, problems: list[dict]) -> defaultdict:
         """Prepares a batch of problems for passing through MLC model. Passed to DataLoader as argument `collate_fn`.
 
         Args:
@@ -228,6 +238,7 @@ class LetterStringDataset(Dataset):
             f"Batch by: {self.batching_method}.",
             f"Query first: {self.query_first}."
         ])
+
 
 def set_batch_to_device(batch):
     # Make sure all padded tensors are on GPU if needed
