@@ -177,7 +177,7 @@ def main():
                 # compute validation loss
                 val_loss = evaluate_loss(val_dataloader, model, loss_fn=loss_fn)
                 mytracker = {'epoch':cp.epoch, 'step':cp.step, 'lr':mylr, 'avg_train_loss':avg_train_loss, 'val_loss': val_loss}
-                cp.val_loss_hist.append(mytracker)
+                cp.loss_hist.append(mytracker)
                 prop_finished = cp.step / nsteps_estimate
                 print(f"{timeSince(start, prop_finished)}, Step: {cp.step}, LR: {mylr:.7f}, TrainLoss: {avg_train_loss:.4f}, ValLoss: {val_loss:.4f}")
                 # update best validation loss
