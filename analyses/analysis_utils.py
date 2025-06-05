@@ -130,11 +130,11 @@ def get_loss_plot(checkpoint, ax) -> plt.Axes:
     return loss_plot
 
 
-def get_encoder_attention_plot(model, batch, idx: int):
+def get_encoder_attention_plot(model, batch, idx: int, titles=True):
     # setup figure
-    fig, ax = plt.subplots(1, len(model.transformer.encoder.layers), figsize=(18, 6))
-    fig.tight_layout(pad=3)
+    fig, ax = plt.subplots(len(model.transformer.encoder.layers), 1, figsize=(6, 16))
 
+    model.eval()
     # get source mask (i.e., mask padded elements in the batch):
     src, src_key_padding_mask = model.prep_encode(batch['xq_context_padded'])
     src_mask = None
@@ -175,7 +175,11 @@ def get_encoder_attention_plot(model, batch, idx: int):
         weights = attn_weights[idx, :example_length, :example_length].detach().cpu().numpy()  # shape: [seq_len, seq_len]
 
         _ = sns.heatmap(weights, cmap="viridis", xticklabels=batch["xq_context"][idx], yticklabels=batch["xq_context"][idx], ax=ax[i])
-        _ = ax[i].set_title(f"Encoder-Layer {i+1}")
+        if titles:
+            _ = ax[i].set_title(f"Averaged Attention, Encoder-Layer {i+1}")
+        _ = ax[i].tick_params(axis='both', which='major', labelsize=8)
+        _ = ax[i].set_xlabel("key")
+        _ = ax[i].set_ylabel("query")
     return fig
 
 
@@ -242,7 +246,7 @@ def plot_token_predictions(idx: int, batch, predictions, probs, symbols):
     )
     return fig
 
-
+# TODO: finish defining run analyses
 def run_analyses(include_analyses: list, checkpoint_paths: list):
     """Runs analyses that require predictions from the model (hence more efficient to run on GPU)"""
 

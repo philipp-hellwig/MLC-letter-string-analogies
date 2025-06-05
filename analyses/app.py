@@ -23,8 +23,9 @@ def get_setup(path="../models/MLC_all_trans_study1_nep20_lr0_0005_bs64_dr0_2_io_
     cp = CheckPoint.from_pt(path)
     model = cp.load_model(verbose=False)
     model.eval()
-    val_loader = cp.load_dataloaders("../data/all_transformations_study1", use_datasets=["val"], verbose=False)[0]
+    val_loader = cp.load_dataloaders(f"../{cp.train_config.dir_data}", use_datasets=["val"], verbose=False)[0]
     return cp, model, val_loader
+
 
 @st.cache_data
 def get_predictions_for_filter(model_path, filter_by=None):
@@ -42,28 +43,15 @@ def get_predictions_for_filter(model_path, filter_by=None):
     lang = _val_loader.dataset.langs["output"]
     return batch, predictions, probs, lang
 
-# def get_batched_predictions(dataloader):
-#     batch = next(iter(dataloader))
-#     predictions, logits = evaluate.predict(batch, model, val_loader.dataset.langs, max_length=val_loader.dataset.yq_max+5, return_logits=True)
-#     probs = torch.nn.functional.softmax(logits, dim=1)
-#     lang = val_loader.dataset.langs["output"]
-#     return batch, predictions, probs, lang
-
-
-# def get_predictions_for_filter(val_loader, filter_by):
-#     if filter_by is None:
-#         val_loader.dataset.set_filter("unstructured")
-#     else:
-#         val_loader.dataset.set_filter("transformation", filter_by)
-#     return get_batched_predictions(val_loader)
-
 
 with st.sidebar:
-    models_dir = "../models/"
+    experiments = os.listdir("../models")
+    experiment_path = st.radio("Choose an experiment:", options=experiments)
+    models_dir = f"../models/{experiment_path}/"
     model_names = os.listdir(models_dir)
-    model_names = [model for model in model_names if "MLC_batch" in model]
     path = models_dir + st.radio("Choose a model:", options=model_names)
     cp, model, val_loader = get_setup(path)
+
 
 with tab1:
     st.subheader("Model Comparisons")
@@ -93,5 +81,5 @@ with tab3:
     fig = analysis_utils.plot_token_predictions(idx, batch, predictions, probs, [lang.index2symbol[i] for i in range(lang.n_symbols)])
     st.plotly_chart(fig)
     st.subheader("Encoder Averaged Attention Activations")
-    enc_attn_fig = analysis_utils.get_encoder_attention_plot(model, batch, idx=idx)
-    st.pyplot(enc_attn_fig)
+    enc_attn_fig = analysis_utils.get_encoder_attention_plot(model, batch, idx=idx, titles=False)
+    st.pyplot(enc_attn_fig, use_container_width=False)
