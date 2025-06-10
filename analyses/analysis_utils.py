@@ -133,7 +133,7 @@ def get_loss_plot(checkpoint, ax) -> plt.Axes:
 def get_encoder_attention_plot(model, batch, idx: int, titles=True):
     # setup figure
     fig, ax = plt.subplots(len(model.transformer.encoder.layers), 1, figsize=(6, 16))
-
+    num_enc_layers = len(model.transformer.encoder.layers)
     model.eval()
     # get source mask (i.e., mask padded elements in the batch):
     src, src_key_padding_mask = model.prep_encode(batch['xq_context_padded'])
@@ -174,13 +174,13 @@ def get_encoder_attention_plot(model, batch, idx: int, titles=True):
         # Select the first batch and first head
         weights = attn_weights[idx, :example_length, :example_length].detach().cpu().numpy()  # shape: [seq_len, seq_len]
 
-        _ = sns.heatmap(weights, cmap="viridis", xticklabels=batch["xq_context"][idx], yticklabels=batch["xq_context"][idx], ax=ax[i])
+        _ = sns.heatmap(weights, cmap="viridis", xticklabels=batch["xq_context"][idx], yticklabels=batch["xq_context"][idx], ax=ax[num_enc_layers-1-i])
         if titles:
-            _ = ax[i].set_title(f"Averaged Attention, Encoder-Layer {i+1}")
-        _ = ax[i].tick_params(axis='both', which='major', labelsize=8)
-        _ = ax[i].set_xlabel("key")
-        _ = ax[i].set_ylabel("query")
-    return fig
+            _ = ax[num_enc_layers-1-i].set_title(f"Averaged Attention, Encoder-Layer {num_enc_layers-i}")
+        _ = ax[num_enc_layers-1-i].tick_params(axis='both', which='major', labelsize=8)
+        _ = ax[num_enc_layers-1-i].set_xlabel("key")
+        _ = ax[num_enc_layers-1-i].set_ylabel("query")
+    return fig, ax
 
 
 def plot_token_predictions(idx: int, batch, predictions, probs, symbols):

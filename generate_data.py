@@ -232,7 +232,7 @@ def get_unique_problems_counterfactual_analogy():
     lewis_mitchell["problem"] = lewis_mitchell["problem"].apply(lambda x: " ".join(x))
     return lewis_mitchell["problem"].unique()
 
-# TODO: For generalization types (i.e., group and interleave), only apply generalization to the query, not the study example
+
 def generate_dataset(
         transformations: dict,
         permutation_levels: list=[0, 2, 5, 10, 20], 
