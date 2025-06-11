@@ -194,7 +194,6 @@ def main():
                 scheduler_warmup.step()
 
         # after each epoch, calculate and save accuracy of generated predictions on val:
-        val_accuracy = evaluate_predictions(val_dataloader, model)
         scores, trans_types, distribution, copy = evaluate_predictions(val_dataloader, model, max_length=val_dataloader.dataset.yq_max+5, eval_type="max")
         val_accuracy = dict()
         val_accuracy["epoch"] = cp.epoch

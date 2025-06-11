@@ -132,6 +132,26 @@ Results:
 
 Loss and Accuracy are based on the lowest/highest value achieved during training on the *validation* set. 
 
+### Num. permuted Alphabets
+
+- We assessed whether generalization gets better the more permuted alphabets are included in the dataset. To do this, we compared the accuracy of models trained on 4 different datasets containing 20,40,60, and 80 permuted alphabets.
+```python
+python generate_data.py --data_dir "data/all_transformations_study1_copy_perm40" --alphaberts_per_perm_level 5 --copy
+
+python generate_data.py --data_dir "data/all_transformations_study1_copy_perm40" --alphaberts_per_perm_level 10 --copy
+python generate_data.py --data_dir "data/all_transformations_study1_copy_perm60" --alphabets_per_perm_level 15 --copy
+
+python generate_data.py --data_dir "data/all_transformations_study1_copy_perm80" --alphaberts_per_perm_level 20 --copy
+```
+- To match dataset sizes we used `shrink_dataset.py` located in the `data` directory:
+```python
+python shrink_dataset.py --dataset "all_transformations_study1_copy_perm40" --reference_dataset "all_transformations_study1_copy_perm20"
+
+python shrink_dataset.py --dataset "all_transformations_study1_copy_perm60" --reference_dataset "all_transformations_study1_copy_perm20"
+
+python shrink_dataset.py --dataset "all_transformations_study1_copy_perm80" --reference_dataset "all_transformations_study1_copy_perm20"
+```
+
 ## References
 [^1]: Lake, B. M., & Baroni, M. (2023). Human-like systematic generalization through a meta-learning neural network. Nature, 623(7985), 115-121. https://doi.org/10.1038/s41586-023-06668-3
 [^2]: Lewis, M., & Mitchell, M. (2024). Using Counterfactual Tasks to Evaluate the Generality of Analogical Reasoning in Large Language Models. Proceedings of the Annual Meeting of the Cognitive Science Society, 46. https://escholarship.org/uc/item/58d9s666
