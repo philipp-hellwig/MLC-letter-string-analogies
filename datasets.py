@@ -119,6 +119,7 @@ class LetterStringDataset(Dataset):
             "alphabet"- Construct batch with problems from the same alphabet. \
             "transformation"- Construct batch with problems from the same transformation type. \
             "both"- Construct batch with problems from the same transformation type and from the same alphabet. \
+            "study_alphabet"- Construct batch with alphabet and study example held constant. \
             Default: "unstructured".
         query_first (str, optional): Whether to put the query infront of the study example(s) and alphabet or after the alphabet and study example(s). Default: True.
     """
@@ -140,6 +141,7 @@ class LetterStringDataset(Dataset):
         self.batching_method = batching_method
         self.transformation_types = list(data.transformation.unique())
         self.unique_alphabets = list(data.alphabet.unique())
+        self.unique_study = list(data.study.unique())
         self.query_first = query_first
         # split problem into query xq and target yq
         data[["xq","yq"]] = data["problem"].str.split(">", expand=True)
@@ -197,6 +199,12 @@ class LetterStringDataset(Dataset):
                 self.filter = {comb: [] for comb in self.trans_alph_combinations}
                 for i, example in enumerate(self.data):
                     self.filter[" | ".join([example["transformation"], example["alphabet"]])].append(i)
+            case "study_alphabet":
+                # accumulate example ids by transformation type and alphabet:
+                self.study_alph_combinations = [" | ".join([study, alph]) for study in self.unique_study for alph in self.unique_alphabets]
+                self.filter = {comb: [] for comb in self.study_alph_combinations}
+                for i, example in enumerate(self.data):
+                    self.filter[" | ".join([example["study"], example["alphabet"]])].append(i)
             case "unstructured":
                 self.filter = {"all": list(range(len(self.data)))}
             case _ :
