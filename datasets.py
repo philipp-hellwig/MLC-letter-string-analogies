@@ -118,7 +118,7 @@ class LetterStringDataset(Dataset):
             "unstructured"- Construct batch with random subset of the problems. \
             "alphabet"- Construct batch with problems from the same alphabet. \
             "transformation"- Construct batch with problems from the same transformation type. \
-            "both"- Construct batch with problems from the same transformation type and from the same alphabet. \
+            "transformation_alphabet"- Construct batch with problems from the same transformation type and from the same alphabet. \
             "study_alphabet"- Construct batch with alphabet and study example held constant. \
             Default: "unstructured".
         query_first (str, optional): Whether to put the query infront of the study example(s) and alphabet or after the alphabet and study example(s). Default: True.
@@ -193,7 +193,7 @@ class LetterStringDataset(Dataset):
                 self.filter = {alph: [] for alph in self.unique_alphabets}
                 for i, example in enumerate(self.data):
                     self.filter[example["alphabet"]].append(i)
-            case "both":
+            case "transformation_alphabet":
                 # accumulate example ids by transformation type and alphabet:
                 self.trans_alph_combinations = [" | ".join([trans, alph]) for trans in self.transformation_types for alph in self.unique_alphabets]
                 self.filter = {comb: [] for comb in self.trans_alph_combinations}
