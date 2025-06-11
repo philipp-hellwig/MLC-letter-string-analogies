@@ -12,7 +12,7 @@ from plotly.subplots import make_subplots
 import numpy as np
 
 sys.path.append("../")
-from evaluate import predict
+from evaluate import predict_batch
 import generate_data
 from checkpoint import CheckPoint
 
@@ -32,7 +32,7 @@ def predict_dataset(
         max_length = val_dataloader.dataset.yq_max + 5
     data_with_pred = []
     for i, batch in enumerate(tqdm(val_dataloader, desc="Predicting")):
-        batch["pred"] = predict(batch, model, val_dataloader.dataset.langs, max_length=max_length)
+        batch["pred"] = predict_batch(batch, model, val_dataloader.dataset.langs, max_length=max_length)
         data_with_pred.append(batch)
         if num_batches is not None:
             if i > num_batches:
@@ -245,6 +245,7 @@ def plot_token_predictions(idx: int, batch, predictions, probs, symbols):
         font=dict(size=18)  # Increase overall font size (axes, title, etc.)
     )
     return fig
+
 
 # TODO: finish defining run analyses
 def run_analyses(include_analyses: list, checkpoint_paths: list):

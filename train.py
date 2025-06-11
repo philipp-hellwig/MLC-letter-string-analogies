@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from checkpoint import CheckPoint, TrainConfig
 from datasets import LetterStringDataset
-from evaluate import evaluate_loss, evaluate_predictions
+from evaluate import get_dataset_loss, evaluate_predictions
 from model import MLC, MLCConfig
 from timing import timeSince
 
@@ -175,7 +175,7 @@ def main():
                 mylr = optimizer.param_groups[0]['lr']
                 avg_train_loss = sum_train_loss / counter
                 # compute validation loss
-                val_loss = evaluate_loss(val_dataloader, model, loss_fn=loss_fn)
+                val_loss = get_dataset_loss(val_dataloader, model, loss_fn=loss_fn)
                 mytracker = {'epoch':cp.epoch, 'step':cp.step, 'lr':mylr, 'avg_train_loss':avg_train_loss, 'val_loss': val_loss}
                 cp.loss_hist.append(mytracker)
                 prop_finished = cp.step / nsteps_estimate
@@ -191,8 +191,10 @@ def main():
                 counter = 0
             # if learning rate warm-up, increase learning rate for each step within the first epoch
             if train_config.lr_warmup and cp.epoch==1: 
-                scheduler_warmup.step() 
+                scheduler_warmup.step()
+
         # after each epoch, calculate and save accuracy of generated predictions on val:
+        val_accuracy = evaluate_predictions(val_dataloader, model)
         scores, trans_types, distribution, copy = evaluate_predictions(val_dataloader, model, max_length=val_dataloader.dataset.yq_max+5, eval_type="max")
         val_accuracy = dict()
         val_accuracy["epoch"] = cp.epoch

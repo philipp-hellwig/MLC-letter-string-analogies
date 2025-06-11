@@ -19,14 +19,14 @@ def batch_loss(batch, model, loss_fn):
     return loss.cpu().item()
 
 
-def evaluate_loss(dataloader: torch.utils.data.DataLoader, model, loss_fn=None):
+def get_dataset_loss(dataloader: torch.utils.data.DataLoader, model, loss_fn=None):
     """Compute average loss over (validation) dataset contained in the dataloader."""
     batch_losses = [batch_loss(batch, model, loss_fn) for batch in dataloader]
     return np.mean(batch_losses)
 
 
 @torch.no_grad()
-def predict(
+def predict_batch(
     batch, 
     model, 
     langs: datasets.Lang, 
@@ -53,7 +53,7 @@ def predict(
     emission_lang = langs['output']
     memory, memory_padding_mask = model.encode(batch) 
     batch_size = len(batch['yq'])
-    z_padded = torch.tensor([emission_lang.symbol2index[datasets.IO_SEP]]*batch_size, device=DEVICE)
+    z_padded = torch.tensor([emission_lang.IN_OUT_idx]*batch_size, device=DEVICE)
     z_padded = z_padded.unsqueeze(1)
 
     # Run through decoder
@@ -95,7 +95,7 @@ def evaluate_predictions(dataloader: torch.utils.data.DataLoader, model, max_len
     distribution = []
     copy_task = []
     for batch in tqdm(dataloader, desc="Evaluating predicted solutions", disable= not verbose): # each batch
-        predictions = predict(batch, model, dataloader.dataset.langs, max_length, eval_type=eval_type)
+        predictions = predict_batch(batch, model, dataloader.dataset.langs, max_length, eval_type=eval_type)
         batch_scores = [pred==yq for pred, yq in zip(predictions, batch["yq"])]
         scores += batch_scores
         transformation_types += batch["transformation"]
