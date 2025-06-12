@@ -1,4 +1,3 @@
-import argparse
 import sys 
 
 from tqdm import tqdm
@@ -14,7 +13,7 @@ import numpy as np
 sys.path.append("../")
 from evaluate import predict_batch
 import generate_data
-from checkpoint import CheckPoint
+
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -245,33 +244,3 @@ def plot_token_predictions(idx: int, batch, predictions, probs, symbols):
         font=dict(size=18)  # Increase overall font size (axes, title, etc.)
     )
     return fig
-
-
-# TODO: finish defining run analyses
-def run_analyses(include_analyses: list, checkpoint_paths: list):
-    """Runs analyses that require predictions from the model (hence more efficient to run on GPU)"""
-
-    for cp_path in checkpoint_paths:
-        # load checkpoint:
-        cp = CheckPoint.from_pt(cp_path)
-        # load model and dataset:
-        val = cp.load_dataloaders(f"../{cp.train_config.dir_data}", val_batch_size=5000, use_datasets=["val", "test"])
-        model = cp.load_model()
-        model.eval()
-        # perform specified analyses:
-        predictions = predict_dataset(val, model)
-        # save results:
-
-
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--include_analyses', type=str, default='test.pt', help='*REQUIRED* Filename for saving model checkpoints. Ends in .pt')
-    parser.add_argument('--checkpoint_paths', type=str, default='test.pt', help='*REQUIRED* Filename for saving model checkpoints. Ends in .pt')
-    args = parser.parse_args()
-    run_analyses(args.include_analyses, args.checkpoint_paths)
-
-
-if __name__ == "__main__":
-    main()

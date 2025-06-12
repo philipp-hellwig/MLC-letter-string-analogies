@@ -233,6 +233,19 @@ def get_unique_problems_counterfactual_analogy():
     return lewis_mitchell["problem"].unique()
 
 
+def get_copy_study_examples(row, study_by_alph_trans):
+    dim_study_examples = study_by_alph_trans[row["alphabet"]][row["transformation"]].shape
+    study_idx = np.random.randint(dim_study_examples[1])
+    # study example to replace with the actual example:
+
+    study_examples = study_by_alph_trans[row["alphabet"]][row["transformation"]][:,study_idx]
+    replace_idx = np.random.randint(dim_study_examples[0])
+    study_examples[replace_idx] = row["problem"]
+    study_examples = " | ".join(study_examples)
+    row["study"] = study_examples
+    return row
+
+
 def generate_dataset(
         transformations: dict,
         permutation_levels: list=[0, 2, 5, 10, 20], 
@@ -240,6 +253,7 @@ def generate_dataset(
         n_reshuffle: int=50,
         alphabets_per_perm_level: int=1,
         n_study: int=3,
+        prop_study: float=1.0,
         copy=False
         ) -> pd.DataFrame:
     
@@ -256,11 +270,13 @@ def generate_dataset(
     Returns:
         pd.DataFrame: Dataframe with columns: n_perm, alphabet, transformation, query, study.
     """
+    assert(prop_study > 0 and prop_study <=1)
     # data set should be csv with (n_permutations, alphabet, study examples, query, problem type)
     n = 0
     # initialize data frame:
     cols = ["n_perm", "alphabet", "transformation", "problem", "query_length"] #+ ["study" + str(i) for i in range(1, n_study+1)]
     dataset = pd.DataFrame(columns=cols)
+    study_by_alph_trans = {}
     for n_perm in tqdm(permutation_levels, desc="Generating Problems"):
         alphabets_n_perm = []
         for _ in range(alphabets_per_perm_level):
@@ -271,7 +287,8 @@ def generate_dataset(
                 if alph_string not in alphabets_n_perm:
                     alphabets_n_perm.append(alph_string)
                     break 
-                
+            study_by_alph_trans[alph_string] = {}
+
             for idx in transformations.keys():
                 problems, query_lengths = [], []
                 for length in prob_lengths:
@@ -286,9 +303,12 @@ def generate_dataset(
                             pass
                 # generate study examples by reshuffling the problems n_reshuffle times:
                 reshuffled_datasets = []
-                study_examples = np.array([np.random.permutation(problems) for _ in range(n_study)])
-                separator = " | "
-                study_examples_joined = np.array([separator.join(study_examples[:, i]) for i in range(study_examples.shape[1])])
+                study_tasks = deepcopy(problems)
+                if prop_study < 1:
+                    study_tasks = np.random.choice(study_tasks, size= int(prop_study * len(problems)))
+                    study_tasks = np.random.choice(study_tasks, size=len(problems), replace=True)
+                study_examples = np.array([np.random.permutation(study_tasks) for _ in range(n_study)])
+                study_examples_joined = np.array([" | ".join(study_examples[:, i]) for i in range(study_examples.shape[1])])
                 # apply generalization (group, interleave) to problem if applicable:
                 if transformations[idx]["generalization_function"] is not None:
                     generalized_problems = []
@@ -301,6 +321,7 @@ def generate_dataset(
                         generalized_problems.append(problem)
                     problems = generalized_problems
                 
+                study_by_alph_trans[alph_string][transformations[idx]["transformation"]] = study_examples
                 for _ in range(n_reshuffle):
                     reshuffled_data = pd.DataFrame({
                             "n_perm" : [n_perm for _ in range(len(problems))],
@@ -320,7 +341,7 @@ def generate_dataset(
     dataset["copy"] = False
     if copy:
         copy_ds = dataset.copy(deep=True)
-        copy_ds.study = copy_ds.problem
+        copy_ds["study"] = copy_ds.apply(lambda row: get_copy_study_examples(row, study_by_alph_trans)["study"], axis=1)
         copy_ds["copy"] = True
         dataset = pd.concat([dataset, copy_ds])
     return dataset
@@ -537,16 +558,17 @@ def get_transformations(trans: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--data_dir', default="data/debug", help='The directory in which the data set will be saved')
     parser.add_argument('--transformations', default="all", help='Comma-separated list of integers of transformations to include when generating data (e.g., 1,2 will include extend sequence and successor). Defaults to all.')
-    parser.add_argument('--seed', default=42, type=int, help="random seed for data generation. Default: 42")
     parser.add_argument('--training_transformations', default="train_default", help='Which transformations to include in training set.')
     parser.add_argument('--permutation_levels', default="1,2,5,10,20", help="Comma-seperated list of integers of permutation levels")
-    parser.add_argument('--data_dir', default="data/debug", help='The directory in which the data set will be saved')
     parser.add_argument('--n_reshuffle', default=10, type=int, help='How many times to reshuffle the data to get new problem-study example pairs. Defaults to 10.')
     parser.add_argument('--alphabets_per_perm_level', default=5, type=int, help='How many unique alphabets to generate per permutation level. Defaults to 5.')
-    parser.add_argument('--study_examples', default=1, type=int, help='How many study examples to show per problem. Default is 1.')
+    parser.add_argument('--n_study', default=1, type=int, help='How many study examples to show per problem. Default is 1.')
+    parser.add_argument('--prop_study', default=1.0, type=float, help='Proportion of queries to use as study examples. Default is 1.')
     parser.add_argument('--query_overlap', default=False, action='store_true', help="Whether or not to allow the same queries (with different study examples) to appear in all training splits.")
     parser.add_argument('--copy', default=False, action='store_true', help="Whether or not to include copy only tasks (examples where query is included in the study examples).")
+    parser.add_argument('--seed', default=42, type=int, help="random seed for data generation. Default: 42")
     args = parser.parse_args()
     
     # set seeds for reproducibility:
@@ -554,13 +576,13 @@ def main():
     random.seed(args.seed)
     transformations = get_transformations(args.transformations)
     perm_levels = [int(lvl) for lvl in args.permutation_levels.split(",")]
-
     dataset = generate_dataset(
         transformations=transformations,
         permutation_levels=perm_levels,
         n_reshuffle=args.n_reshuffle,
         alphabets_per_perm_level=args.alphabets_per_perm_level,
-        n_study=args.study_examples,
+        n_study=args.n_study,
+        prop_study=float(args.prop_study),
         copy=args.copy
     )
     # create directory if it doesnt exist yet

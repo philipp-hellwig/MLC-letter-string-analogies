@@ -163,7 +163,7 @@ def main():
             # debug printing:
             if args.print_batches:
                 for i, example in enumerate(train_batch["xq_context"]):
-                    print(f"Transformation: [{train_batch["transformation"][i]}], Alphabet: [{train_batch["alphabet"][i]}]")
+                    print(f"Transformation: [{train_batch["transformation"][i]}], Alphabet: [{train_batch["alphabet"][i]}], Study: [{train_batch["study"][i]}]")
                     print(f"xq_context: {" ".join(example)}")
                     print(f"xq_context_tensor: {" ".join([str(int(t)) for t in train_batch["xq_context_tensor"][i]])}\n")
             loss = train(train_batch, model, loss_fn, optimizer)
