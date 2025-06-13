@@ -69,7 +69,7 @@ def get_alternative_rule(row, check_transformations=[2,3]):
     return row
 
 
-def training_information(checkpoint, val_loader, description="Training information:", fig_width: int=12, figs_only=False):
+def training_history(checkpoint, val_loader, description="Training information:", fig_width: int=12, figs_only=False):
     if not figs_only:
         print(description)
     # plot training loss and learning rate:
@@ -81,7 +81,7 @@ def training_information(checkpoint, val_loader, description="Training informati
     if not figs_only:
         print(f'Best Validation Loss: {checkpoint.best_val_loss:.3f}')
 
-    # plot accuracy overall and 
+    # plot accuracy overall and in- / out-of-distribution
     fig2, ax2 = plt.subplots(1, 2, figsize=(fig_width,4), width_ratios=(2,3))
     val_acc = pd.DataFrame(checkpoint.val_acc_hist)
     val_acc = pd.melt(val_acc, id_vars=['epoch'], value_vars=["in", "out-of", "overall"], var_name="distribution", value_name="accuracy")
@@ -101,10 +101,15 @@ def training_information(checkpoint, val_loader, description="Training informati
             lambda x: generate_data.ALL_TRANSFORMATIONS[trans2idx[str(x)]]["generalization_type"]
     )
 
+    generalization_descriptions = {
+        0: "in training tranformations",
+        2: "new compositions",
+        3: "completely new rules"
+    }
     fig3, ax3 = plt.subplots(3, 1, figsize=(fig_width,16))
     for i, gen_type in enumerate([0,2,3]):
         _ = sns.lineplot(data=val_acc_by_gen[val_acc_by_gen.generalization==gen_type], x="epoch", y="accuracy", hue="transformation", ax=ax3[i])
-        _ = ax3[i].set_title(f"Validation accuracy generalization type {gen_type}")
+        _ = ax3[i].set_title(f"Generalization to {generalization_descriptions[gen_type]}")
         _ = ax3[i].legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
 
     return (fig1, fig2, fig3)
