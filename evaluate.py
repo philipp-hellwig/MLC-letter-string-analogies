@@ -30,7 +30,8 @@ def predict_batch(
     batch, 
     model, 
     langs: datasets.Lang, 
-    max_length: int, 
+    max_length: int,
+    check_for_valid_length: bool=True,
     eval_type='max', 
     return_logits: bool=False
     ) -> list:
@@ -47,12 +48,13 @@ def predict_batch(
         list[list[str]]: A list of lists that contain the model predictions (symbols) for each problem in the batch.
     """
     assert eval_type in ['max','sample']
-    max_length_target = batch['yq_padded'].shape[1]-1 # length without EOS
-    assert max_length >= max_length_target # make sure that the model can generate targets of the proper length
+    if check_for_valid_length:
+        max_length_target = batch['yq_padded'].shape[1]-1 # length without EOS
+        assert max_length >= max_length_target # make sure that the model can generate targets of the proper length
     model.eval()
     emission_lang = langs['output']
     memory, memory_padding_mask = model.encode(batch) 
-    batch_size = len(batch['yq'])
+    batch_size = len(batch['xq_context'])
     z_padded = torch.tensor([emission_lang.IN_OUT_idx]*batch_size, device=DEVICE)
     z_padded = z_padded.unsqueeze(1)
 

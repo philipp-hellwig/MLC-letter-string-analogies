@@ -3,6 +3,7 @@ numpy
 pandas
 plotly
 seaborn
+statsmodels
 streamlit
 torch
 tqdm

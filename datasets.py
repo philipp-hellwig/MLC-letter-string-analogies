@@ -224,7 +224,7 @@ class LetterStringDataset(Dataset):
             problems (list[dict]): list of letter-string problems obtained via `__getitem__()`
 
         Returns:
-            dict: Padded tensors for MLC forward pass ("xq_context_padded", "yq_padded", "yq_sos_padded") & meta data about each problem in the batch. 
+            dict: Padded tensors for MLC forward pass ("xq_context_padded", "yq_padded", "yq_io_padded") & meta data about each problem in the batch. 
         """
         batch = defaultdict(list)
         for d in problems:

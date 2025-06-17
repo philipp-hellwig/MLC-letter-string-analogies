@@ -19,7 +19,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def predict_dataset(
-        val_dataloader, 
+        dataloader, 
         model, 
         max_length: int=None, 
         num_batches: int=None, 
@@ -28,10 +28,10 @@ def predict_dataset(
     ) -> pd.DataFrame:
     """Convenience function that computes predictions and returns the dataset in a dataframe with added columns `pred` and `correct`"""
     if max_length is None:
-        max_length = val_dataloader.dataset.yq_max + 5
+        max_length = dataloader.dataset.yq_max + 5
     data_with_pred = []
-    for i, batch in enumerate(tqdm(val_dataloader, desc="Predicting")):
-        batch["pred"] = predict_batch(batch, model, val_dataloader.dataset.langs, max_length=max_length)
+    for i, batch in enumerate(tqdm(dataloader, desc="Predicting")):
+        batch["pred"] = predict_batch(batch, model, dataloader.dataset.langs, max_length=max_length)
         data_with_pred.append(batch)
         if num_batches is not None:
             if i > num_batches:
@@ -184,7 +184,28 @@ def get_encoder_attention_plot(model, batch, idx: int, titles=True):
         _ = ax[num_enc_layers-1-i].tick_params(axis='both', which='major', labelsize=8)
         _ = ax[num_enc_layers-1-i].set_xlabel("key")
         _ = ax[num_enc_layers-1-i].set_ylabel("query")
-    return fig, ax
+    return fig
+
+
+def get_encoder_representations(batch, model):
+    src, src_key_padding_mask = model.prep_encode(batch['xq_context_padded'])
+    # get encoder representations with shape (batch size, max context length batch, repr_dimension)
+    enc_representations = model.transformer.encoder.forward(
+        src=src,
+        src_key_padding_mask=src_key_padding_mask
+    )
+    # reduce dimensions to shape (batch size, repr dimension):
+    enc_representations = enc_representations.mean(dim=1)
+    return enc_representations 
+
+
+
+def get_cosine_similarity_matrix(tensors: list):
+    """Concatenates a list of tensors along the first dimension and takes the cosine similarities for
+    each element"""
+    combined = torch.cat(tensors, dim=0)
+    repr_norm = F.normalize(combined, p=2, dim=1)
+    return repr_norm @ repr_norm.T
 
 
 def plot_token_predictions(idx: int, batch, predictions, probs, symbols):

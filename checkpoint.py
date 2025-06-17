@@ -58,15 +58,16 @@ class CheckPoint:
             msg = "Config mismatches found:\n" + "\n".join("  " + m for m in mismatches)
             raise AssertionError(msg)
 
-    def load_dataloaders(self, data_dir="data", verbose: bool = True, val_batch_size=25, use_datasets=["train", "val"]) -> tuple:
+    def load_dataloaders(self, data_dir="data", verbose: bool = True, batch_size: int=None, use_datasets=["train", "val"]) -> tuple:
         """Load and return train, validation, and test DataLoaders"""
+        
         dataloaders = []
         for dataset in use_datasets:
             ds = LetterStringDataset(
                 data_dir=data_dir,
                 mode=dataset,
                 batching_method=self.train_config.batching_method,
-                batch_size=self.train_config.batch_size if dataset != "val" else val_batch_size,
+                batch_size=self.train_config.batch_size if batch_size is None else batch_size,
                 query_first=self.train_config.query_first,
             )
             dataloader = DataLoader(ds, batch_sampler=ds.sampler, collate_fn=ds.collate_fn)           

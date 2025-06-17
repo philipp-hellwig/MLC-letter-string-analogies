@@ -1,5 +1,6 @@
 analyses/prediction_data
 data
+figures
 misc.ipynb
 __pycache__
 presentations
