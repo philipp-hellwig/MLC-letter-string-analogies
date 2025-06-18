@@ -53,7 +53,7 @@ def main():
     parser.add_argument('--dir_model', type=str, default='models', help='Directory for saving model files')
     parser.add_argument('--dir_data', type=str, default='data/base_problems', help='Directory for loading datasets')
     parser.add_argument('--batch_size', type=int, default=25, help='number of episodes per batch')
-    parser.add_argument('--batching_method', type=str, default="unstructured", help="How to sample batches from the dataset. Options are: 'unstructured', 'alphabet', 'transformation' and 'both'. Default: 'unstructured'.")
+    parser.add_argument('--batching_method', type=str, default="random", help="How to sample batches from the dataset. Options are: 'random', 'alphabet', 'transformation' and 'both'. Default: 'random'.")
     parser.add_argument('--query_first', default=False, action='store_true', help="the order in which to construct the xq_context vector. If True, the order is query | study | alphabet, if False it is alphabet | study | query.")
     parser.add_argument('--nepochs', type=int, default=50, help='number of training epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate')

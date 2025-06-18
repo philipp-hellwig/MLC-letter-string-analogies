@@ -115,12 +115,12 @@ class LetterStringDataset(Dataset):
         data_dir (str): The directory the data is stored in.
         alphabet (list, optional): The unique letters that occur in this dataset. Default: standard unpermuted alphabet (a,b,c,...,z).
         batching_method (str, optional): How to group batches. Options are: \
-            "unstructured"- Construct batch with random subset of the problems. \
+            "random"- Construct batch with random subset of the problems. \
             "alphabet"- Construct batch with problems from the same alphabet. \
             "transformation"- Construct batch with problems from the same transformation type. \
             "transformation_alphabet"- Construct batch with problems from the same transformation type and from the same alphabet. \
             "study_alphabet"- Construct batch with alphabet and study example held constant. \
-            Default: "unstructured".
+            Default: "random".
         query_first (str, optional): Whether to put the query infront of the study example(s) and alphabet or after the alphabet and study example(s). Default: True.
     """
     def __init__(
@@ -129,7 +129,7 @@ class LetterStringDataset(Dataset):
             data_dir: str, 
             alphabet: list=list(string.ascii_lowercase), 
             batch_size: int=25,
-            batching_method: str="unstructured", 
+            batching_method: str="random", 
             query_first: bool=False
         ):
         assert mode in ['train','val','test']        
@@ -205,7 +205,7 @@ class LetterStringDataset(Dataset):
                 self.filter = {comb: [] for comb in self.study_alph_combinations}
                 for i, example in enumerate(self.data):
                     self.filter[" | ".join([example["study"], example["alphabet"]])].append(i)
-            case "unstructured":
+            case "random":
                 self.filter = {"all": list(range(len(self.data)))}
             case _ :
                 raise NotImplementedError(f"{batching_method} is an unknown value for the argument batching_method.")
