@@ -51,7 +51,7 @@ def train(batch: defaultdict, model: MLC, loss_fn, optimizer) -> float:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filename_model', type=str, default='test.pt', help='*REQUIRED* Filename for saving model checkpoints. Ends in .pt')
-    parser.add_argument('--dir_model', type=str, default='models', help='Directory for saving model files')
+    parser.add_argument('--dir_model', type=str, default='models/num_permuted_alphabets', help='Directory for saving model files')
     parser.add_argument('--dir_data', type=str, default='data/base_problems', help='Directory for loading datasets')
     parser.add_argument('--batch_size', type=int, default=25, help='number of episodes per batch')
     parser.add_argument('--batching_method', type=str, default="random", help="How to sample batches from the dataset. Options are: 'random', 'alphabet', 'transformation' and 'both'. Default: 'random'.")
