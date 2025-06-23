@@ -1,6 +1,7 @@
 import argparse
 from collections import defaultdict
 import math
+import os
 import time
 
 import numpy as np
@@ -72,6 +73,19 @@ def main():
     parser.add_argument('--print_batches', default=False, action='store_true', help='print the 1st, 25th, and thereafter every 100th batch for debugging')
 
     args = parser.parse_args()
+    saved_cps = os.listdir(args.dir_model)
+    # if the model filename already exists, assume this training run is a replication:
+    if args.filename_model in saved_cps:
+        print(f"Filename already exists in directory {args.dir_model}")
+        rep = 1
+        while True:
+            rep_filename = f"{args.filename_model.replace(".pt", "")}_rep{rep}.pt"
+            if rep_filename not in saved_cps:
+                args.filename_model = rep_filename
+                print(f"Saving model at location '{args.dir_model}/{args.filename_model}' instead.")
+                break
+            rep += 1
+    
     train_config = TrainConfig(
         args.filename_model,
         args.dir_model,
