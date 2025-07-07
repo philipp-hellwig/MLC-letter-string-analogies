@@ -160,51 +160,60 @@ class CheckPoint:
             device (str): _description_
         """
         cp_state = torch.load(current_path, map_location=DEVICE, weights_only=False)
-        args = cp_state["args"]
-        if args.sampling_method:
-            args.batching_method = args.sampling_method
-        train_config = TrainConfig(
-            args.filename_model,
-            args.dir_model,
-            args.dir_data,
-            args.batch_size,
-            args.batching_method,
-            args.query_first,
-            args.nepochs,
-            args.lr,
-            args.lr_end_factor,
-            args.lr_warmup,
-            args.save_best,
-            args.save_best_skip,
-        )
-        D_train = LetterStringDataset("train", data_dir=data_dir)
-        # setup model:
-        mlc_config = MLCConfig(
-            hidden_size=args.emb_size, 
-            input_size=D_train.langs['input'].n_symbols, 
-            output_size=D_train.langs['output'].n_symbols,
-            PAD_idx_input=D_train.langs['input'].PAD_idx, 
-            PAD_idx_output=D_train.langs['output'].PAD_idx,
-            nlayers_encoder=args.nlayers_encoder, 
-            nlayers_decoder=args.nlayers_decoder,
-            nhead=args.nheads,
-            dropout_p=args.dropout,
-            activation= args.act,
-            ff_mult=args.ff_mult
-        )
-        cp = CheckPoint(mlc_config, train_config)
+        print(cp_state)
+        if "args" in cp_state.keys():
+            args = cp_state["args"]
+            if args.sampling_method:
+                args.batching_method = args.sampling_method
+        
+            train_config = TrainConfig(
+                args.filename_model,
+                args.dir_model,
+                args.dir_data,
+                args.batch_size,
+                args.batching_method,
+                args.query_first,
+                args.nepochs,
+                args.lr,
+                args.lr_end_factor,
+                args.lr_warmup,
+                args.save_best,
+                args.save_best_skip,
+            )
+            D_train = LetterStringDataset("train", data_dir=data_dir)
+            # setup model:
+            mlc_config = MLCConfig(
+                hidden_size=args.emb_size, 
+                input_size=D_train.langs['input'].n_symbols, 
+                output_size=D_train.langs['output'].n_symbols,
+                PAD_idx_input=D_train.langs['input'].PAD_idx, 
+                PAD_idx_output=D_train.langs['output'].PAD_idx,
+                nlayers_encoder=args.nlayers_encoder, 
+                nlayers_decoder=args.nlayers_decoder,
+                nhead=args.nheads,
+                dropout_p=args.dropout,
+                activation= args.act,
+                ff_mult=args.ff_mult
+            )
+            cp = CheckPoint(mlc_config, train_config)
 
-        cp.best_val_loss = cp_state["best_val_loss"]
-        cp.loss_hist = cp_state["train_tracker"]
-        cp.val_acc_hist = cp_state["val_accuracy"]
-        cp.step = cp_state["step"]
-        cp.epoch = cp_state["epoch"]
-        cp.net_state_dict = cp_state["nets_state_dict"]
-        cp.optimizer_state_dict = cp_state["optimizer_state_dict"]
-        cp.scheduler_epoch_state_dict = cp_state["scheduler_epoch_state_dict"]
+            cp.best_val_loss = cp_state["best_val_loss"]
+            cp.loss_hist = cp_state["train_tracker"]
+            cp.val_acc_hist = cp_state["val_accuracy"]
+            cp.step = cp_state["step"]
+            cp.epoch = cp_state["epoch"]
+            cp.net_state_dict = cp_state["nets_state_dict"]
+            cp.optimizer_state_dict = cp_state["optimizer_state_dict"]
+            cp.scheduler_epoch_state_dict = cp_state["scheduler_epoch_state_dict"]
 
-        model, optimizer, scheduler_epoch = cp.resume_training(mlc_config, train_config)
-        cp.save(model, optimizer, scheduler_epoch, save_path=save_path)
+            model, optimizer, scheduler_epoch = cp.resume_training(mlc_config, train_config)
+            cp.save(model, optimizer, scheduler_epoch, save_path=save_path)
+        else:
+            cp = CheckPoint.from_pt(current_path)
+            if cp.train_config.batching_method == "unstructured":
+                cp.train_config.batching_method = "random"
+            model, optimizer, scheduler_epoch = cp.resume_training(cp.mlc_config, cp.train_config)
+            cp.save(model, optimizer, scheduler_epoch, save_path=save_path)
 
     def __str__(self):
         val_acc = pd.DataFrame(self.val_acc_hist)

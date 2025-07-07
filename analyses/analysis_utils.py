@@ -1,3 +1,4 @@
+from copy import deepcopy
 import sys 
 
 from tqdm import tqdm
@@ -24,13 +25,14 @@ def predict_dataset(
         max_length: int=None, 
         num_batches: int=None, 
         keep_cols: list=None,
-        alternative_rule_errors: bool=True
+        alternative_rule_errors: bool=True,
+        verbose: bool=True
     ) -> pd.DataFrame:
     """Convenience function that computes predictions and returns the dataset in a dataframe with added columns `pred` and `correct`"""
     if max_length is None:
         max_length = dataloader.dataset.yq_max + 5
     data_with_pred = []
-    for i, batch in enumerate(tqdm(dataloader, desc="Predicting")):
+    for i, batch in enumerate(tqdm(dataloader, desc="Generating predictions", disable=not verbose)):
         batch["pred"] = predict_batch(batch, model, dataloader.dataset.langs, max_length=max_length)
         data_with_pred.append(batch)
         if num_batches is not None:
@@ -50,22 +52,23 @@ def predict_dataset(
     pred_data["correct"] = pred_data["yq"] == pred_data["pred"]
 
     if alternative_rule_errors:
-        pred_data["alternate_rule"] = "na"
-        pred_data = pred_data.apply(get_alternative_rule, axis="columns")
+        pred_data["applied_transformation"] = "none/other"
+        pred_data = pred_data.apply(get_applied_transformation, axis="columns")
     return pred_data
 
 
-# TODO implement all rules (not just pred and succ rules)
-def get_alternative_rule(row, check_transformations=[2,3]):
-    for func_id in check_transformations:
+def get_applied_transformation(row, check_transformations=[2,3]):
+    for trans_id in check_transformations:
         try:
-            trans = generate_data.ALL_TRANSFORMATIONS[func_id](row.xq, row.alphabet.split())[1]
+            trans = generate_data.ALL_TRANSFORMATIONS[trans_id]["function"](row["xq"].split(), row["alphabet"].split())[1]
+            if trans == row["pred"]:
+                if row["transformation"] == generate_data.ALL_TRANSFORMATIONS[trans_id]["transformation"]:
+                    row["applied_transformation"] = f'{generate_data.ALL_TRANSFORMATIONS[trans_id]["transformation"]} (correct)'
+                else:
+                    row["applied_transformation"] = generate_data.ALL_TRANSFORMATIONS[trans_id]["transformation"]
+                return row
         except IndexError:
-            row.alternate_rule = "na"
-            return row
-        if trans == row.pred:
-            row.alternate_rule = generate_data.ALL_TRANSFORMATIONS[func_id].__name__
-            return row
+            pass
     return row
 
 
@@ -135,9 +138,11 @@ def get_loss_plot(checkpoint, ax) -> plt.Axes:
 
 
 def get_encoder_attention_plot(model, batch, idx: int, titles=True):
+    batch = deepcopy(batch)
+    # load plotting defaults:
+    plt.style.use("./figures_stylesheet.mplstyle")
     # setup figure
-    fig, ax = plt.subplots(len(model.transformer.encoder.layers), 1, figsize=(6, 16))
-    num_enc_layers = len(model.transformer.encoder.layers)
+    fig, ax = plt.subplots(len(model.transformer.encoder.layers), 1, figsize=(8, 20))
     model.eval()
     # get source mask (i.e., mask padded elements in the batch):
     src, src_key_padding_mask = model.prep_encode(batch['xq_context_padded'])
@@ -174,18 +179,200 @@ def get_encoder_attention_plot(model, batch, idx: int, titles=True):
             need_weights=True,
             is_causal=False
         )
-        example_length = len(batch["xq_context"][idx])
-        # Select the first batch and first head
-        weights = attn_weights[idx, :example_length, :example_length].detach().cpu().numpy()  # shape: [seq_len, seq_len]
-
-        _ = sns.heatmap(weights, cmap="viridis", xticklabels=batch["xq_context"][idx], yticklabels=batch["xq_context"][idx], ax=ax[num_enc_layers-1-i])
+        if isinstance(idx, list):
+            max_length = np.max([len(batch["xq_context"][index]) for index in idx])
+            multi_idx_ticks = []
+            for index, token in enumerate(batch["xq_context"][idx[0]]):
+                if token == "IO":
+                    io_pos = index
+                else:
+                    multi_idx_ticks.append("")
+            len_study = len(batch["study"][idx[0]].split())
+            multi_idx_ticks[io_pos - int(len_study/4)-1] = "input"
+            multi_idx_ticks[io_pos + int(len_study/4)+1] = "output"
+            weights = attn_weights[idx, :max_length, :max_length].detach().cpu().numpy()  # shape: [seq_len, seq_len]
+            weights = np.mean(weights, axis=0)
+        else:
+            example_length = len(batch["xq_context"][idx])
+            weights = attn_weights[idx, :example_length, :example_length].detach().cpu().numpy()  # shape: [seq_len, seq_len]
+            for index, token in enumerate(batch["xq_context"][idx]):
+                if token == "SOS":
+                    batch["xq_context"][idx][index] = "|"
+                elif token == "IO":
+                    batch["xq_context"][idx][index] = "→"
+                    io_pos = index
+            len_alph = len(batch["alphabet"][idx].split())
+            len_study = len(batch["study"][idx].split())
+            dashed_separators = [
+                len_alph, 
+                len_alph + 1,
+                io_pos,
+                io_pos + 1,
+                len_alph + len_study + 1,
+                len_alph + len_study + 2
+            ]
+            ax[i].vlines(dashed_separators, 0, weights.shape[0], color="orange", linestyles="dashed", linewidth=1)
+            ax[i].hlines(dashed_separators, 0, weights.shape[0], color="orange", linestyles="dashed", linewidth=1)
+        sns.heatmap(
+            weights, 
+            cmap="viridis", 
+            xticklabels=multi_idx_ticks if isinstance(idx, list) else batch["xq_context"][idx], 
+            yticklabels=multi_idx_ticks if isinstance(idx, list) else batch["xq_context"][idx], 
+            ax=ax[i])
+        
         if titles:
-            _ = ax[num_enc_layers-1-i].set_title(f"Averaged Attention, Encoder-Layer {num_enc_layers-i}")
-        _ = ax[num_enc_layers-1-i].tick_params(axis='both', which='major', labelsize=8)
-        _ = ax[num_enc_layers-1-i].set_xlabel("key")
-        _ = ax[num_enc_layers-1-i].set_ylabel("query")
+            ax[i].set_title(f"Averaged Attention, Encoder-Layer {i+1}")
+        ax[i].tick_params(axis='both', which='major', labelsize=8)
+        ax[i].set_xticklabels(ax[i].get_xticklabels(), rotation=0, ha='center', fontsize=12)
+        ax[i].set_yticklabels(ax[i].get_yticklabels(), rotation=-90, va='center', fontsize=12)
+        ax[i].set_aspect('equal')
+        ax[i].set_xlabel("K", loc='right', labelpad=-4 if isinstance(idx, list) else 4)
+        ax[i].set_ylabel("Q", loc='top', labelpad=-4 if isinstance(idx, list) else 4)
+
+        if isinstance(idx, list):
+            ax[i].tick_params('both', length=0)
+            len_alph = len(batch["alphabet"][idx[0]].split())
+            len_study = len(batch["study"][idx[0]].split())
+            dashed_separators = [
+                len_alph, 
+                len_alph + 1,
+                io_pos,
+                io_pos + 1,
+                len_alph + len_study + 1,
+                len_alph + len_study + 2
+            ]
+            ax[i].vlines(dashed_separators, 0, weights.shape[0], color="orange", linestyles="dashed", linewidth=1)
+            ax[i].hlines(dashed_separators, 0, weights.shape[0], color="orange", linestyles="dashed", linewidth=1)
+            
+            secondary_ticks = [
+                len_alph / 2, 
+                len_alph + len_study / 2 + 1, 
+                len_alph + len_study + 6
+            ]
+            # x axis
+            sec = ax[i].secondary_xaxis(location=0)
+            sec.set_xticks(secondary_ticks, labels=['\nalphabet', '\nstudy', '\nquery'])
+            sec.tick_params('x', length=0)
+            # lines between the classes:
+            sec2 = ax[i].secondary_xaxis(location=0)
+            sec2.set_xticks([len_alph, len_alph + len_study + 2], labels=[])
+            sec2.tick_params('x', length=35, width=1)
+
+            # y axis:
+            sec = ax[i].secondary_yaxis(location=0)
+            sec.set_yticks(secondary_ticks, labels=['\nalphabet', '\nstudy', '\nquery'], rotation=-90)
+            sec.tick_params('y', length=0)
+            # lines between the classes:
+            sec2 = ax[i].secondary_yaxis(location=0)
+            sec2.set_yticks([len_alph, len_alph + len_study + 2], labels=[])
+            sec2.tick_params('y', length=35, width=1)
+        elif i==0:
+            len_alph = len(batch["alphabet"][idx].split())
+            len_study = len(batch["study"][idx].split())
+            secondary_ticks = [
+                len_alph / 2, 
+                len_alph + len_study / 2 + 1, 
+                len_alph + len_study + 5
+            ]
+            # x axis
+            sec = ax[i].secondary_xaxis(location="top")
+            sec.set_xticks(secondary_ticks, labels=['\nalphabet', '\nstudy', '\nquery'], fontsize=14)
+            sec.tick_params('x', length=0)
+            # lines between the classes:
+            sec2 = ax[i].secondary_xaxis(location="top")
+            sec2.set_xticks([len_alph, len_alph + len_study + 2], labels=[])
+            sec2.tick_params('x', length=20, width=1)
+
+
     return fig
 
+def get_encoder_study_attention_plot(model, batch, idx: int, enc_layer: int=2, titles=True, axis=None, cbar=False):
+    batch = deepcopy(batch)
+    # load plotting defaults:
+    plt.style.use("./figures_stylesheet.mplstyle")
+    model.eval()
+    # get source mask (i.e., mask padded elements in the batch):
+    src, src_key_padding_mask = model.prep_encode(batch['xq_context_padded'])
+    src_mask = None
+    src_key_padding_mask = F._canonical_mask(
+            mask=src_key_padding_mask,
+            mask_name="src_key_padding_mask",
+            other_type=F._none_or_dtype(src_mask),
+            other_name="src_mask",
+            target_type=src.dtype,
+        )
+    src_mask = F._canonical_mask(
+        mask=src_mask,
+        mask_name="src_mask",
+        other_type=None,
+        other_name="",
+        target_type=src.dtype,
+        check_other=False,
+    )
+    x = src
+    for j in range(enc_layer-1):
+        x = model.transformer.encoder.layers[j](
+            x,
+            src_key_padding_mask=src_key_padding_mask)
+    layer = model.transformer.encoder.layers[enc_layer-1]
+    # get averaged attention matrix from current layer
+    _, attn_weights = layer.self_attn(
+        x,
+        x,
+        x,
+        attn_mask=src_mask,
+        key_padding_mask=src_key_padding_mask,
+        need_weights=True,
+        is_causal=False
+    )
+    max_length = np.max([len(batch["xq_context"][index]) for index in idx])
+    multi_idx_ticks = []
+    for index, token in enumerate(batch["xq_context"][idx[0]]):
+        if token == "IO":
+            io_pos = index
+        else:
+            multi_idx_ticks.append("")
+    len_study = len(batch["study"][idx[0]].split())
+
+    weights = attn_weights[idx, :max_length, :max_length].detach().cpu().numpy()  # shape: [seq_len, seq_len]
+    weights = np.mean(weights, axis=0)
+    study_start = len(batch["alphabet"][idx[0]].split())
+    study_end = len(batch["alphabet"][idx[0]].split()) + len_study + 2
+    weights = weights[study_start:study_end, study_start:study_end]
+
+    len_alph = len(batch["alphabet"][idx[0]].split())
+    len_study = len(batch["study"][idx[0]].split())
+    labels = ["" for _ in range(study_end - study_start)]
+    labels[io_pos - len_alph] = "→"
+    labels[(io_pos - len_alph) - len_study // 4 - 1] = "input"
+    labels[(io_pos - len_alph) + len_study // 4 + 1] = "output"
+    _ = sns.heatmap(
+            weights, 
+            cmap="viridis", 
+            xticklabels=labels, 
+            yticklabels=labels, 
+            ax=axis,
+            vmin=0, vmax=0.4,
+            cbar=cbar)
+    axis.set_xticklabels(axis.get_xticklabels(), rotation=0, ha='center', fontsize=18)
+    axis.set_yticklabels(axis.get_yticklabels(), rotation=-90, va='center', fontsize=18)
+    axis.set_aspect('equal')
+    axis.set_xlabel("K", loc='right', labelpad=-4, fontsize=20)
+    axis.set_ylabel("Q", loc='top', labelpad=-4, fontsize=20)
+    # if isinstance(idx, list):
+    axis.tick_params('both', length=0)
+    dashed_separators = [
+        0, 
+        1,
+        io_pos - len_alph,
+        io_pos - len_alph + 1,
+        len_study + 1,
+        len_study + 2
+    ]
+    axis.vlines(dashed_separators, 0, weights.shape[0], color="orange", linestyles="dashed", linewidth=1.5)
+    axis.hlines(dashed_separators, 0, weights.shape[0], color="orange", linestyles="dashed", linewidth=1.5)
+
+    return None
 
 def get_encoder_representations(batch, model):
     src, src_key_padding_mask = model.prep_encode(batch['xq_context_padded'])

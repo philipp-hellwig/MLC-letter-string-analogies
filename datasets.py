@@ -5,7 +5,7 @@ import random
 import string
 
 import torch
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Dataset, Sampler, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import pandas as pd
 
@@ -87,8 +87,9 @@ class BatchSampler(Sampler):
 
     def __iter__(self):
         if (self.reshuffle 
-                or self.all_indices is None
-                or self.filter.keys() != self.dataset.filter.keys()):
+            or self.all_indices is None
+            or self.filter.keys() != self.dataset.filter.keys()):
+
             self.all_indices = []
             # go through all filters
             for f in self.dataset.filter.keys():
@@ -195,10 +196,14 @@ class LetterStringDataset(Dataset):
                     self.filter[example["alphabet"]].append(i)
             case "transformation_alphabet":
                 # accumulate example ids by transformation type and alphabet:
-                self.trans_alph_combinations = [" | ".join([trans, alph]) for trans in self.transformation_types for alph in self.unique_alphabets]
-                self.filter = {comb: [] for comb in self.trans_alph_combinations}
+                if include is None:
+                    self.trans_alph_combinations = [" | ".join([trans, alph]) for trans in self.transformation_types for alph in self.unique_alphabets]
+                    self.filter = {comb: [] for comb in self.trans_alph_combinations}
+                else:
+                    self.filter = {trans: [] for trans in include}
                 for i, example in enumerate(self.data):
-                    self.filter[" | ".join([example["transformation"], example["alphabet"]])].append(i)
+                    if " | ".join([example["transformation"], example["alphabet"]]) in self.filter.keys():
+                        self.filter[" | ".join([example["transformation"], example["alphabet"]])].append(i)
             case "study_alphabet":
                 # accumulate example ids by transformation type and alphabet:
                 self.study_alph_combinations = [" | ".join([study, alph]) for study in self.unique_study for alph in self.unique_alphabets]
@@ -254,6 +259,27 @@ def set_batch_to_device(batch):
     for k in tensors_to_gpu:
         batch[k] = batch[k].to(device=DEVICE, non_blocking=True)
     return batch
+
+
+class LetterStringDataLoader(DataLoader):
+    def __init__(
+        self,
+        mode: str, 
+        data_dir: str, 
+        alphabet: list=list(string.ascii_lowercase), 
+        batch_size: int=25,
+        batching_method: str="random", 
+        query_first: bool=False
+        ):
+        dataset = LetterStringDataset(
+            mode,
+            data_dir,
+            alphabet,
+            batch_size,
+            batching_method,
+            query_first
+        )
+        super().__init__(dataset, batch_sampler=dataset.sampler, collate_fn=dataset.collate_fn)
 
 
 if __name__ == "__main__":
