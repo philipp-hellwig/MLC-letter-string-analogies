@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from checkpoint import CheckPoint, TrainConfig
-from datasets import LetterStringDataset
+from datasets import LetterStringDataLoader
 from evaluate import get_dataset_loss, evaluate_predictions
 from model import MLC, MLCConfig
 from timing import timeSince
@@ -52,7 +52,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filename_model', type=str, default='test.pt', help='*REQUIRED* Filename for saving model checkpoints. Ends in .pt')
     parser.add_argument('--dir_model', type=str, default='models/num_permuted_alphabets', help='Directory for saving model files')
-    parser.add_argument('--dir_data', type=str, default='data/base_problems', help='Directory for loading datasets')
+    parser.add_argument('--dir_data', type=str, default='data/base_tiny', help='Directory for loading datasets')
     parser.add_argument('--batch_size', type=int, default=25, help='number of episodes per batch')
     parser.add_argument('--batching_method', type=str, default="random", help="How to sample batches from the dataset. Options are: 'random', 'alphabet', 'transformation' and 'both'. Default: 'random'.")
     parser.add_argument('--query_first', default=False, action='store_true', help="the order in which to construct the xq_context vector. If True, the order is query | study | alphabet, if False it is alphabet | study | query.")
@@ -82,7 +82,7 @@ def main():
             rep_filename = f"{args.filename_model.replace(".pt", "")}_rep{rep}.pt"
             if rep_filename not in saved_cps:
                 args.filename_model = rep_filename
-                print(f"Saving model at location '{args.dir_model}/{args.filename_model}' instead.")
+                print(f"Saving model as '{args.dir_model}/{args.filename_model}' instead.")
                 break
             rep += 1
     
@@ -101,22 +101,23 @@ def main():
         args.save_best_skip,
     )
     # initialize datasets and dataloaders:
-    D_train = LetterStringDataset(
-        data_dir=train_config.dir_data, 
+    train_dataloader = LetterStringDataLoader(
         mode="train", 
-        batching_method=train_config.batching_method, 
-        batch_size=train_config.batch_size, 
-        query_first=train_config.query_first
-    )
-    train_dataloader = DataLoader(D_train, batch_sampler=D_train.sampler, collate_fn=D_train.collate_fn)
-    D_val = LetterStringDataset(
         data_dir=train_config.dir_data, 
-        mode="val", 
+        batch_size=train_config.batch_size, 
         batching_method=train_config.batching_method, 
-        batch_size=5000, 
         query_first=train_config.query_first
     )
-    val_dataloader = DataLoader(D_val, batch_sampler=D_val.sampler, collate_fn=D_val.collate_fn)
+    D_train = train_dataloader.dataset
+    val_dataloader = LetterStringDataLoader(
+        mode="val", 
+        data_dir=train_config.dir_data, 
+        batch_size=5000, 
+        batching_method=train_config.batching_method, 
+        query_first=train_config.query_first
+    )
+    D_val = val_dataloader.dataset
+   
     print(f"Using datasets from directory {train_config.dir_data}:")
     print(D_train)
     print(D_val)

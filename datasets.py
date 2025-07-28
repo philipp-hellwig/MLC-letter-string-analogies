@@ -82,30 +82,32 @@ class BatchSampler(Sampler):
         self.dataset = dataset
         self.batch_size = batch_size
         self.reshuffle = reshuffle
-        self.all_indices = None
+        self.batches = None
         self.filter = dataset.filter
 
     def __iter__(self):
         if (self.reshuffle 
-            or self.all_indices is None
+            or self.batches is None
             or self.filter.keys() != self.dataset.filter.keys()):
 
-            self.all_indices = []
+            self.batches = []
             # go through all filters
             for f in self.dataset.filter.keys():
                 # Get indices for the current filter f
                 indices = self.dataset.filter[f]
                 indices = indices.copy()
+                # shuffle ids within each batch:
                 random.shuffle(indices)
                 for i in range(0, len(indices), self.batch_size):
-                    self.all_indices.append(indices[i:i+self.batch_size])
-            random.shuffle(self.all_indices)
+                    self.batches.append(indices[i:i+self.batch_size])
+            # shuffle order of batches:
+            random.shuffle(self.batches)
         
-        for batch in self.all_indices:
+        for batch in self.batches:
             yield batch
 
     def __len__(self):
-        return math.ceil(len(self.dataset) // self.batch_size)
+        return len(self.dataset.data) // self.batch_size
 
 
 class LetterStringDataset(Dataset):
@@ -279,7 +281,7 @@ class LetterStringDataLoader(DataLoader):
             batching_method,
             query_first
         )
-        super().__init__(dataset, batch_sampler=dataset.sampler, collate_fn=dataset.collate_fn)
+        super().__init__(dataset=dataset, batch_sampler=dataset.sampler, collate_fn=dataset.collate_fn)
 
 
 if __name__ == "__main__":

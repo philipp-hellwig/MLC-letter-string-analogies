@@ -17,7 +17,7 @@ import generate_data
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+plt.style.use("./figures_stylesheet.mplstyle")
 
 def predict_dataset(
         dataloader, 
@@ -72,7 +72,7 @@ def get_applied_transformation(row, check_transformations=[2,3]):
     return row
 
 
-def training_history(checkpoint, val_loader, description="Training information:", fig_width: int=12, figs_only=False):
+def training_history(checkpoint, val_loader, description="Training information:", fig_width: int=10, figs_only=False):
     if not figs_only:
         print(description)
     # plot training loss and learning rate:
@@ -105,16 +105,16 @@ def training_history(checkpoint, val_loader, description="Training information:"
     )
 
     generalization_descriptions = {
-        0: "in training tranformations",
-        2: "new compositions",
-        3: "completely new rules"
+        0: "Training Transformations",
+        2: "New (Compositional) Transformations",
+        3: "Novel Transformations"
     }
     fig3, ax3 = plt.subplots(3, 1, figsize=(fig_width,16))
     for i, gen_type in enumerate([0,2,3]):
         _ = sns.lineplot(data=val_acc_by_gen[val_acc_by_gen.generalization==gen_type], x="epoch", y="accuracy", hue="transformation", ax=ax3[i])
-        _ = ax3[i].set_title(f"Generalization to {generalization_descriptions[gen_type]}")
+        _ = ax3[i].set_title(generalization_descriptions[gen_type])
         _ = ax3[i].legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0.)
-
+    fig3.tight_layout(h_pad=2)
     return (fig1, fig2, fig3)
 
 
@@ -137,10 +137,8 @@ def get_loss_plot(checkpoint, ax) -> plt.Axes:
     return loss_plot
 
 
-def get_encoder_attention_plot(model, batch, idx: int, titles=True):
+def get_encoder_attention_plot(model, batch, idx: int, titles=True, enc_layer: int=None):
     batch = deepcopy(batch)
-    # load plotting defaults:
-    plt.style.use("./figures_stylesheet.mplstyle")
     # setup figure
     fig, ax = plt.subplots(len(model.transformer.encoder.layers), 1, figsize=(8, 20))
     model.eval()
@@ -180,6 +178,7 @@ def get_encoder_attention_plot(model, batch, idx: int, titles=True):
             is_causal=False
         )
         if isinstance(idx, list):
+            # for multiple tasks, change labels and average attention weights:
             max_length = np.max([len(batch["xq_context"][index]) for index in idx])
             multi_idx_ticks = []
             for index, token in enumerate(batch["xq_context"][idx[0]]):
@@ -282,7 +281,6 @@ def get_encoder_attention_plot(model, batch, idx: int, titles=True):
             sec2 = ax[i].secondary_xaxis(location="top")
             sec2.set_xticks([len_alph, len_alph + len_study + 2], labels=[])
             sec2.tick_params('x', length=20, width=1)
-
 
     return fig
 

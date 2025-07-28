@@ -66,6 +66,9 @@ You can obtain the datasets in two ways:
     python generate_data.py --data_dir "data/all_transformations_study1"
     python generate_data.py --data_dir "data/all_transformations_study3" --study_examples 3
     python generate_data.py --data_dir "data/all_transformations_study1_incl_copy_fixed_gen" --copy
+
+    # Dataset with new alphabets:
+    python generate_data.py --data_dir "data/all_transformations_study1_new_alphabets" --n_reshuffle 5 --seed 123
     ```
     #### Arguments
     ```    
@@ -134,14 +137,14 @@ Loss and Accuracy are based on the lowest/highest value achieved during training
 
 ### Num. permuted Alphabets
 
-- We assessed whether generalization gets better the more permuted alphabets are included in the dataset. To do this, we compared the accuracy of models trained on 4 different datasets containing 20,40,60, and 80 permuted alphabets.
+- We assessed whether generalization gets better the more permuted alphabets are included in the dataset. To do this, we compared the accuracy of models trained on 4 different datasets containing 20, 40, 60, and 80 permuted alphabets.
 ```python
-python generate_data.py --data_dir "data/all_transformations_study1_copy_perm40" --alphaberts_per_perm_level 5 --copy
+python generate_data.py --data_dir "data/all_transformations_study1_copy_perm40" --alphabets_per_perm_level 5 --copy
 
-python generate_data.py --data_dir "data/all_transformations_study1_copy_perm40" --alphaberts_per_perm_level 10 --copy
+python generate_data.py --data_dir "data/all_transformations_study1_copy_perm40" --alphabets_per_perm_level 10 --copy
 python generate_data.py --data_dir "data/all_transformations_study1_copy_perm60" --alphabets_per_perm_level 15 --copy
 
-python generate_data.py --data_dir "data/all_transformations_study1_copy_perm80" --alphaberts_per_perm_level 20 --copy
+python generate_data.py --data_dir "data/all_transformations_study1_copy_perm80" --alphabets_per_perm_level 20 --copy
 ```
 - To match dataset sizes we used `shrink_dataset.py` located in the `data` directory:
 ```python

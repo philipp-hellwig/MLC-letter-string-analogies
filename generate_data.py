@@ -37,6 +37,9 @@ from tqdm import tqdm
 # 17.   Reverse (a b c d -> d c b a)
 # 18.   Shift (a b c d -> e f g h)
 # 19.   Replicate (a b c d -> a b c d a b c d)
+
+# Additional Transformation for analysis:
+# 20.   Unreverse (d c b a -> a b c d) i.e., reverse but applied the other way around
 # ---------------------------------------------------------------------------------------------
 
 
@@ -198,6 +201,11 @@ def shift(prob_letters, alphabet, *args):
 # 19. Replicate (a b c d -> a b c d a b c d)
 def replicate(prob_letters, *args):
     return [prob_letters, list(np.tile(prob_letters, 2))]
+
+
+# 20. Unreverse (d c b a -> a b c d)
+def unreverse(prob_letters, *args):
+    return [[letter for letter in reversed(prob_letters)], prob_letters]
 
 
 # permutes alphabet
@@ -527,6 +535,12 @@ ALL_TRANSFORMATIONS = {
     19: {
         "transformation": "replicate",
         "function": replicate,
+        "generalization_function": None,
+        "generalization_type": 3
+    },
+    20: {
+        "transformation": "unreverse",
+        "function": unreverse,
         "generalization_function": None,
         "generalization_type": 3
     }
