@@ -52,7 +52,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filename_model', type=str, default='test.pt', help='*REQUIRED* Filename for saving model checkpoints. Ends in .pt')
     parser.add_argument('--dir_model', type=str, default='models/num_permuted_alphabets', help='Directory for saving model files')
-    parser.add_argument('--dir_data', type=str, default='data/base_tiny', help='Directory for loading datasets')
+    parser.add_argument('--dir_data', type=str, default='data/all_transformations_tiny', help='Directory for loading datasets')
     parser.add_argument('--batch_size', type=int, default=25, help='number of episodes per batch')
     parser.add_argument('--batching_method', type=str, default="random", help="How to sample batches from the dataset. Options are: 'random', 'alphabet', 'transformation' and 'both'. Default: 'random'.")
     parser.add_argument('--query_first', default=False, action='store_true', help="the order in which to construct the xq_context vector. If True, the order is query | study | alphabet, if False it is alphabet | study | query.")

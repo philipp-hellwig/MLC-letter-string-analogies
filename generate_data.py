@@ -559,7 +559,7 @@ def demo(sequence: list, alphabet: list=list(string.ascii_lowercase)):
 def get_transformations(trans: str) -> dict:
     match trans: 
         case "all":
-            transformations = ALL_TRANSFORMATIONS
+            transformations = {idx: ALL_TRANSFORMATIONS[idx] for idx in range(1, 20)}
         case "base":
             transformations = {idx: ALL_TRANSFORMATIONS[idx] for idx in range(1, 7)}
         case "train_default":
