@@ -27,39 +27,40 @@ Applying Meta-Learning for Compositionality (MLC) introduced by Lake & Baroni (2
   - `seaborn`
   - `torch`
   - `tqdm`
-- install all packages by running the following command in your terminal:
+- Install all packages by running the following command in your terminal:
   ```
   pip install -r requirements.txt
   ```
 
 ### Repository Structure
 ```
-├───analyses            - analysis notebooks for trained models.
+├───analyses
+│   │
+│   ├───analysis_utils.py           - utilities for plotting
+│   ├───study_examples.ipynb        - num. study examples experiments:
+│   │                               - Supplementary Material Figure 1, Table 1
+│   ├───batching.ipynb              - batching methods without copy tasks on 20 permuted training alphabets
+│   ├───copy_batching.ipynb         - batching methods with copy tasks on 20 permuted training alphabets
+│   ├───num_perm_alphabets.ipynb    - utilities for plotting
 │
-├───data                - datasets used for analyses
+├───data                      - Datasets used for all experiments
 |
-├───hyperparameter_search
-│       config.py       - config - fixed and varied hyperparameters
-│       run_hpsearch.py - run hyperparameter search
-│
-├───models              - Saved checkpoints that include the model parameters of trained models
+├───models                    - Saved checkpoints for all experiments
 |
-│   checkpoint.py       - CheckPoint class - used for saving/loading models
-|   datasets.py         - implements Language and Dataset classes used for dataloading
-|   evaluate.py         - evaluation functions for batches given an MLC model
-|   generate_data.py    - generates the dataset (problem sets of letter-string analogies)
-|   model.py            - contains the MLC model class
-│   requirements.txt    - required python packages
-|   train.py            - training loop for the MLC model
-|   timing.py           - timing utility function
+│   checkpoint.py             - CheckPoint class - used for saving/loading models
+|   datasets.py               - implements Language and Dataset classes used for dataloading
+|   evaluate.py               - evaluation functions for batches given an MLC model
+|   generate_data.py          - generates the dataset (problem sets of letter-string analogies)
+|   model.py                  - contains the MLC model class
+|   train.py                  - training loop for the MLC model
+|   timing.py                 - timing utility function
 ```
 
 ## Replication
 
 ### Datasets
-You can obtain the datasets in two ways:
-1. Download them [here](link).
-2. Generate datasets yourself.
+
+We generated the different datasets using the following code snippets:
     #### Code Snippets
     The snippets below generate all datasets used in our project (`data_dir` corresponds to the directory you find when downloading the data):
     ```python
