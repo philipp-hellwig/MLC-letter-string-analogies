@@ -110,3 +110,6 @@ def main():
 
     tbl_perm20 = get_accuracy_table(cps_perm20)
     tbl_perm20.to_csv("perm20_accuracies.csv", index=False)
+
+if __name__ == "__main__":
+    main()
