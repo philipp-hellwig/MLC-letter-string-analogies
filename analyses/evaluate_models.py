@@ -1,19 +1,15 @@
 import os
-import re
 
 import torch
 import pandas as pd
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-import nltk
+
 import sys 
 import analysis_utils
 sys.path.append("../")
 
 from checkpoint import CheckPoint
 from datasets import LetterStringDataLoader
-import generate_data
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
