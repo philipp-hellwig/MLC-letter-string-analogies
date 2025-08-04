@@ -2,6 +2,10 @@ analyses/older_analyses
 data/all_*
 data/deprecated
 figures
+models/larger_dataset
+models/n_study
+models/old_experiments
+models/train_all_transformations
 misc.ipynb
 __pycache__
 presentations
