@@ -128,6 +128,48 @@ All experiments presented in the paper shared the following parameters:
 | dropout         | 0.1                             |
 | act             | gelu                            |
 
+To reproduce the results of the experiments in the paper, you can run the snippets shown in each section below.
+#### Batching Methods
+```python
+# Batching method random:
+python train.py --filename_model "MLC_batchrand_dallstud1_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_perm20" --batching_method "random"
+
+# Batching method alphabet:
+python train.py --filename_model "MLC_batchbyalph_dallstudy1_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_perm20" --batching_method "alphabet"
+
+# Batching method transformation:
+python train.py --filename_model "MLC_batchbytrans_dallstud1_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_perm20" --batching_method "transformation"
+
+# Batching method transformation and alphabet:
+python train.py --filename_model "MLC_batchbyboth_dallstud1_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_perm20" --batching_method "transformation_alphabet"
+```
+
+#### Copy Tasks
+```python
+# Batching method random:
+python train.py --filename_model "MLC_batchrand_dallstudy1_copy_perm20_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_copy_perm20" --batching_method "random"
+
+# Batching method alphabet:
+python train.py --filename_model "MLC_batchalph_dallstudy1_copy_perm20_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_copy_perm20" --batching_method "alphabet"
+
+# Batching method transformation:
+python train.py --filename_model "MLC_batchbyboth_dallstud1_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_copy_perm20" --batching_method "transformation"
+
+# Batching method transformation and alphabet:
+python train.py --filename_model "MLC_batchtrans_dallstud1_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_copy_perm20" --batching_method "transformation_alphabet"
+```
+
+#### Number of Training Alphabets
+```python
+# Batching method random for 40 permuted alphabets in training:
+python train.py --filename_model "MLC_batchrand_dallstudy1_copy_perm40_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_copy_perm40" --batching_method "random"
+
+# Batching method alphabet for 40 permuted alphabets in training:
+python train.py --filename_model "MLC_batchalph_dallstudy1_copy_perm40_nep20.pt" --nepochs 20 --batch_size 32 --dir_data "data/all_transformations_study1_copy_perm40" --batching_method "alphabet"
+
+# for more training alphabets, change 40 to the desired number (granted the corresponding datasets exists)
+```
+
 
 ## References
 [^1]: Lake, B. M., & Baroni, M. (2023). Human-like systematic generalization through a meta-learning neural network. Nature, 623(7985), 115-121. https://doi.org/10.1038/s41586-023-06668-3
