@@ -33,6 +33,7 @@ def predict_dataset(
         max_length = dataloader.dataset.yq_max + 5
     data_with_pred = []
     for i, batch in enumerate(tqdm(dataloader, desc="Generating predictions", disable=not verbose)):
+        # add predictions
         batch["pred"] = predict_batch(batch, model, dataloader.dataset.langs, max_length=max_length)
         data_with_pred.append(batch)
         if num_batches is not None:
@@ -284,7 +285,7 @@ def get_encoder_attention_plot(model, batch, idx: int, titles=True, enc_layer: i
 
     return fig
 
-def get_encoder_study_attention_plot(model, batch, idx: int, enc_layer: int=2, titles=True, axis=None, cbar=False):
+def get_encoder_study_attention_plot(model, batch, idx: int, enc_layer: int=2, titles=True, axis=None, cbar=False, max_attn_value=0.4):
     batch = deepcopy(batch)
     # load plotting defaults:
     plt.style.use("./figures_stylesheet.mplstyle")
@@ -350,7 +351,7 @@ def get_encoder_study_attention_plot(model, batch, idx: int, enc_layer: int=2, t
             xticklabels=labels, 
             yticklabels=labels, 
             ax=axis,
-            vmin=0, vmax=0.4,
+            vmin=0, vmax=max_attn_value,
             cbar=cbar)
     axis.set_xticklabels(axis.get_xticklabels(), rotation=0, ha='center', fontsize=18)
     axis.set_yticklabels(axis.get_yticklabels(), rotation=-90, va='center', fontsize=18)

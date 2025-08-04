@@ -10,7 +10,7 @@ import analysis_utils
 sys.path.append("../")
 from checkpoint import CheckPoint
 import evaluate
-from datasets import Lang, LetterStringDataset
+from datasets import LetterStringDataset
 
 pio.renderers.default = "browser"
 

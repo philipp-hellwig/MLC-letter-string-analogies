@@ -6,7 +6,6 @@ import time
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 
 from checkpoint import CheckPoint, TrainConfig
 from datasets import LetterStringDataLoader
@@ -164,7 +163,7 @@ def main():
             scheduler_epoch = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=train_config.lr_end_factor, total_iters=train_config.nepochs-1)
 
     nsteps_estimate = math.ceil(cp.train_config.nepochs*len(D_train)/cp.train_config.batch_size)
-    counter = 0 # num updates since the loss was last reported
+    counter = 0 # num training steps since the loss was last reported
     sum_train_loss = 0.
     print(f"Training on {DEVICE}.")
     start = time.time()
