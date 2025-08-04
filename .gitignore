@@ -1,10 +1,9 @@
-analyses/prediction_data
-data
+analyses/older_analyses
+data/all_*
+data/deprecated
 figures
 misc.ipynb
 __pycache__
 presentations
 profiling
 batching.ipynb
-analyses/table_batching_shared_params.md
-analyses/table_batching.md
