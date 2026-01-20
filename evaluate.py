@@ -4,8 +4,6 @@ from torch.distributions import Categorical
 import torch.utils.data
 from tqdm import tqdm
 
-import datasets
-
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -29,12 +27,12 @@ def get_dataset_loss(dataloader: torch.utils.data.DataLoader, model, loss_fn=Non
 def predict_batch(
     batch, 
     model, 
-    langs: datasets.Lang, 
+    langs: dict, 
     max_length: int,
     check_for_valid_length: bool=True,
     eval_type='max', 
     return_logits: bool=False
-    ) -> list:
+    ) -> tuple | list:
     """Predicts outputs for problem batch until max_length is reached or EOS is found.
 
     Args:

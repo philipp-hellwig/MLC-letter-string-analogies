@@ -1,6 +1,7 @@
 analyses/older_analyses
-data/all_*
-data/deprecated
+analyses/app/d3/frontend/node_modules
+data/letter-string-analogies/
+data/1D-ARC
 figures
 models/larger_dataset
 models/n_study
@@ -11,3 +12,6 @@ __pycache__
 presentations
 profiling
 batching.ipynb
+Supplementary_Information.pdf
+.vscode
+jobs

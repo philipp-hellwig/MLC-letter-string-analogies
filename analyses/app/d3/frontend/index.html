@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; background-color: transparent; }
+        #chart-container { 
+            width: 1000px; 
+            height: 1000px; 
+        }
+        #tooltip {
+            position: absolute;
+            padding: 10px 16px;       /* Increased padding for a larger feel */
+            background: rgba(30, 30, 30, 0.95);
+            color: white;
+            border: 1px solid #af0000;
+            border-radius: 8px;       /* Rounded corners */
+            pointer-events: none;     /* Critical: stops the tooltip from flickering */
+            font-size: 18px;          /* Larger text */
+            font-family: sans-serif;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); /* Adds depth */
+            opacity: 0;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="tooltip"></div>
+    <div id="chart-container"></div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="./main.js"></script>
+</body>
+</html>

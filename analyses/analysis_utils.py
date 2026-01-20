@@ -15,9 +15,8 @@ sys.path.append("../")
 from evaluate import predict_batch
 import generate_data
 
-
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-plt.style.use("./figures_stylesheet.mplstyle")
+# plt.style.use(f"figures_stylesheet.mplstyle")
 
 def predict_dataset(
         dataloader, 
@@ -76,6 +75,9 @@ def get_applied_transformation(row, check_transformations=[2,3]):
 def training_history(checkpoint, val_loader, description="Training information:", fig_width: int=10, figs_only=False):
     if not figs_only:
         print(description)
+
+    print("Argument val loader is deprecated!")
+
     # plot training loss and learning rate:
     fig1, ax1 = plt.subplots(1, 2, figsize=(fig_width,4))
     ax1[0] = get_loss_plot(checkpoint, ax1[0])
@@ -98,8 +100,11 @@ def training_history(checkpoint, val_loader, description="Training information:"
     _ = ax2[1].set_title("Accuracy by Distribution")
 
     # plot accuracies by generalization/transformation type
+    # get transformation types:
+    nontrans = ["epoch", "overall", "copy", "noncopy", "in", "out-of"]
+    transformation_types = [trans for trans in checkpoint.val_acc_hist[0].keys() if trans not in nontrans]
     val_acc = pd.DataFrame(checkpoint.val_acc_hist)
-    val_acc_by_gen = pd.melt(val_acc, id_vars=['epoch'], value_vars=val_loader.dataset.transformation_types, var_name="transformation", value_name="accuracy")
+    val_acc_by_gen = pd.melt(val_acc, id_vars=['epoch'], value_vars=transformation_types, var_name="transformation", value_name="accuracy")
     trans2idx = {trans["transformation"]: idx for idx, trans in generate_data.ALL_TRANSFORMATIONS.items()}
     val_acc_by_gen["generalization"] = val_acc_by_gen.transformation.apply(
             lambda x: generate_data.ALL_TRANSFORMATIONS[trans2idx[str(x)]]["generalization_type"]
@@ -119,13 +124,13 @@ def training_history(checkpoint, val_loader, description="Training information:"
     return (fig1, fig2, fig3)
 
 
-def get_lr_plot(checkpoint, ax) -> plt.Axes:
+def get_lr_plot(checkpoint, ax):
     loss_hist = pd.DataFrame(checkpoint.loss_hist)
     lr_plot = sns.lineplot(data=loss_hist, x="step", y="lr", ax=ax)
     return lr_plot
 
 
-def get_loss_plot(checkpoint, ax) -> plt.Axes:
+def get_loss_plot(checkpoint, ax):
     loss_hist = pd.DataFrame(checkpoint.loss_hist)
     loss_hist = pd.melt(
         loss_hist,
@@ -136,6 +141,150 @@ def get_loss_plot(checkpoint, ax) -> plt.Axes:
     loss_hist["loss"] = loss_hist["loss"].str.replace("_loss", "")
     loss_plot = sns.lineplot(data=loss_hist, x="step", y="value", hue="loss", ax=ax)
     return loss_plot
+
+
+def format_context_labels(batch, idx):
+    labels = []
+    for token in batch["xq_context"][idx]:
+        if token == "SOS":
+            labels.append("|")
+        elif token == "IO":
+            labels.append("→")
+        else:
+            labels.append(token)
+    return labels
+
+
+def get_delimiter_positions(batch, idx):
+    len_alph = len(batch["alphabet"][idx].split())
+    len_study = len(batch["study"][idx].split())
+    io_pos = np.where(np.array(batch["xq_context"][idx]) == "IO")[0][0]
+    separator_positions = [
+                len_alph, 
+                len_alph + 1,
+                io_pos,
+                io_pos + 1,
+                len_alph + len_study + 1,
+                len_alph + len_study + 2
+            ]
+    return separator_positions
+
+
+def plot_attention(attn_matrix, batch, idx, ax, **kwargs):
+    """Plot attention matrix of a given sample (idx) of a batch.
+
+    Args:
+        attn_matrix (_type_): expected to be of dimensionality (batch_size, seq. length, seq. length).
+        batch (_type_): _description_
+        idx (_type_): _description_
+        ax (_type_): _description_
+    """
+
+    example_length = len(batch["xq_context"][idx])
+    weights = attn_matrix[:example_length, :example_length]
+    sep_pos = get_delimiter_positions(batch, idx)
+
+    # plot indicators for separator tokens:
+    ax.vlines(sep_pos, 0, weights.shape[0], color="orange", linestyles="dashed", linewidth=1)
+    ax.hlines(sep_pos, 0, weights.shape[0], color="orange", linestyles="dashed", linewidth=1)
+
+    labels = format_context_labels(batch, idx)
+    # plot attention matrix:
+    sns.heatmap(
+        weights, 
+        cmap="viridis", 
+        xticklabels=labels, 
+        yticklabels=labels, 
+        ax=ax,
+        **kwargs
+    )
+
+    # set plotting parameters:
+    ax.tick_params(axis='both', which='major', labelsize=8)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=0, ha='center', fontsize=12)
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=-90, va='center', fontsize=12)
+    ax.set_aspect('equal')
+    ax.set_xlabel("K", loc='right', labelpad=-4 if isinstance(idx, list) else 4)
+    ax.set_ylabel("Q", loc='top', labelpad=-4 if isinstance(idx, list) else 4)
+
+
+def plot_averaged_attention(extractor, batch, idx, **kwargs):
+    fig, ax = plt.subplots(1, 3, figsize=(20, 8))
+
+    for i, layer_name in enumerate(extractor.attention.keys()):
+        # Retrieve data: (Heads, Seq_Len, Seq_Len)
+        attn_tensor = extractor.attention[layer_name]
+        attn_matrix = attn_tensor[idx].cpu().numpy()
+        # average attention across heads:
+        attn_matrix = attn_matrix.mean(axis=0)
+
+        plot_attention(attn_matrix, batch, idx, ax[i], **kwargs)
+        ax[i].set_title(f"Avg. Attn. Layer {i+1}")
+    return fig
+
+def plot_headwise_attention(
+        extractor, 
+        batch, 
+        idx: int, 
+        transformation="",
+        **kwargs):
+    """
+    Plots attention weights and hidden states extracted from the model.
+
+    Args:
+        extractor (Extractor): An instance of the Extractor class after a forward pass through a model using the `batch` as input.
+        batch: batch that was used during the forward pass.
+        idx (int): The sample index to visualize.
+    """
+    num_heads_per_row = 4
+    num_head_rows = 2 # 2x4 = 8 heads
+
+    # We create a plot for each layer separately to keep the 2x4 layout clean
+    for i, layer_name in enumerate(extractor.attention.keys()):
+        fig_attn, axes_attn = plt.subplots(num_head_rows, num_heads_per_row, 
+                                        figsize=(20, 10))
+        fig_attn.suptitle(f"Attention Layer {i+1}\n(transformation '{transformation}')", fontsize=16)
+
+        # Flatten the 2x4 axes array for easy iteration over the 8 heads
+        flat_axes = axes_attn.flatten()
+        
+        # Retrieve data: (Heads, Seq_Len, Seq_Len)
+        attn_tensor = extractor.attention[layer_name]
+        if attn_tensor.is_nested:
+            attn_tensor = attn_tensor.to_padded_tensor(0.0)
+        attention_data = attn_tensor[idx].cpu().numpy()
+        
+        for head_idx in range(len(flat_axes)):
+            ax = flat_axes[head_idx]
+            plot_attention(attention_data[head_idx], batch, idx, ax, **kwargs)
+            ax.set_title(f'Head {head_idx+1}', fontsize=10)
+        plt.show()
+
+
+def plot_hidden_states(extractor, batch, idx, **kwargs):
+    # plot encoder representations:
+    fig, ax = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(20, 14))
+
+    labels = format_context_labels(batch, idx)
+    separators = get_delimiter_positions(batch, idx)
+    for i in range(3):
+        hidden_size = extractor.hidden_states[f'layer_{i}'][idx].shape[1]
+        sns.heatmap(
+            extractor.hidden_states[f'layer_{i}'][idx][:len(labels),:].T, 
+            ax=ax[i], 
+            yticklabels=list(map(str, range(hidden_size))), 
+            xticklabels=labels,
+            **kwargs
+        )
+        ax[i].set_title(f"Hidden States Layer {i+1}")
+        ax[i].tick_params(axis='x', labelrotation=0)
+        ax[i].set_xlabel("context")
+        ax[i].vlines(separators, 0, hidden_size, color="black", linestyles="dashed", linewidth=2)
+
+        if i == 0:
+            ax[i].set_ylabel("hidden vector (normalized)")
+
+    return fig
 
 
 def get_encoder_attention_plot(model, batch, idx: int, titles=True, enc_layer: int=None):

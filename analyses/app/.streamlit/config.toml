@@ -1,0 +1,6 @@
+[server]
+# This prevents Streamlit from scanning torch.classes incorrectly
+fileWatcherType = "none"
+
+[logger]
+level = "error"

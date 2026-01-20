@@ -1,0 +1,7 @@
+filename_model,Model,batching_method,num. seen alphabets in training,seen transform.,new transform.,alphabets
+MLC_batchunstruct_dallstudy1_nep20.pt,Noncopy (20 alphabets),random,20,0.612,0.107,seen
+MLC_batchunstruct_dallstudy1_nep20.pt,Noncopy (20 alphabets),random,20,0.2851009699475274,0.03806960199961546,new
+MLC_batchrand_dallstudy1_copy_perm20_nep20.pt,Copy (20 alphabets),random,20,0.9,0.099,seen
+MLC_batchrand_dallstudy1_copy_perm20_nep20.pt,Copy (20 alphabets),random,20,0.36206074097630786,0.03864641415112478,new
+,Copy (200 alphabets),alphabet,200,1.0,0.271,seen
+,Copy (200 alphabets),alphabet,200,0.9987279376689457,0.2622572582195732,new

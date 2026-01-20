@@ -3,9 +3,6 @@ import math
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-
-import datasets as dat
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -173,24 +170,3 @@ class MLC(nn.Module):
             f"{self.act} activation function",
             f"p={self.dropout_p} dropout",
         ])
-
-
-if __name__ == "__main__":
-    D_train = dat.LetterStringDataset(data_dir="data", mode="train")
-    train_dataloader = DataLoader(D_train,batch_size=5,collate_fn=lambda x:dat.get_mlc_batch(x,D_train.langs),
-                                    shuffle=True)
-    sample_batch = next(iter(train_dataloader))
-
-    in_size = len(D_train.langs["input"].index2symbol)
-    out_size = len(D_train.langs["output"].index2symbol)
-    pad_in = D_train.langs["input"].PAD_idx
-    pad_out = D_train.langs["output"].PAD_idx
-
-    net = MLC(
-        hidden_size=128, 
-        input_size=in_size, 
-        output_size=out_size, 
-        PAD_idx_input=pad_in, 
-        PAD_idx_output=pad_out
-        )
-    print(net)

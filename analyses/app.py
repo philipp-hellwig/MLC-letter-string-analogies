@@ -1,31 +1,40 @@
+import random
 import string
+import sys
 import os
 
 import plotly.io as pio
 import streamlit as st
+import matplotlib.pyplot as plt
 import torch
 
-import sys
 import analysis_utils
+from analysis_utils import (
+    plot_attention,
+    plot_averaged_attention,
+    plot_headwise_attention
+)
+from extractor import Extractor
+
 sys.path.append("../")
 from checkpoint import CheckPoint
 import evaluate
-from datasets import LetterStringDataset
+from datasets import LetterStringDataset, LetterStringDataLoader
 
 pio.renderers.default = "browser"
 
 st.set_page_config(page_title="MLC Model Predictions", layout="wide")
-tab1, tab2, tab3, tab4 = st.tabs(["Model","Training","Predictions", "Create your own task"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Model", "Training", "Attention Analysis", "Predictions", "Create your own task"])
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def get_setup(path="../models/MLC_all_trans_study1_nep20_lr0_0005_bs64_dr0_2_io_easy_val.pt"):
+def get_setup(path="../models/num_permuted_alphabets/MLC_batchalph_dallstudy1_copy_perm200_nep20.pt"):
     # Load the model checkpoint (update path as needed)
     cp = CheckPoint.from_pt(path)
     model = cp.load_model(verbose=False)
     model.eval()
-    val_loader = cp.load_dataloaders(f"../{cp.train_config.dir_data}", use_datasets=["val"], verbose=False)[0]
-    return cp, model, val_loader
+    # val_loader = cp.load_dataloaders(f"../{cp.train_config.dir_data}", use_datasets=["val"], verbose=False)[0]
+    return cp, model
 
 
 @st.cache_data
@@ -51,17 +60,24 @@ with st.sidebar:
     models_dir = f"../models/{experiment_path}/"
     model_names = os.listdir(models_dir)
     path = models_dir + st.radio("Choose a model:", options=model_names)
-    cp, model, val_loader = get_setup(path)
+    cp, model = get_setup()
 
 
 with tab1:
-    st.subheader("Model Comparisons")
-    with open("results_tables/table_batching.md", "r") as f:
-        model_comparisons_table = f.read()
-    st.markdown(model_comparisons_table, unsafe_allow_html=True)
+    ...
+    # st.subheader("Model Comparisons")
+    # with open("results_tables/table_batching.md", "r") as f:
+    #     model_comparisons_table = f.read()
+    # st.markdown(model_comparisons_table, unsafe_allow_html=True)
 
 
 with tab2:
+    val_loader = LetterStringDataLoader(
+        mode="val", 
+        data_dir="../data/letter-string-analogies/all_transformations_study1_copy_perm40", 
+        batch_size=10, 
+        batching_method="alphabet"
+    )
     st.header("Currently Selected Training Run")
     st.markdown(cp.__str__(), unsafe_allow_html=True)
     train_figs = analysis_utils.training_history(cp, val_loader, fig_width=10, figs_only=True)
@@ -75,15 +91,81 @@ with tab2:
 
 
 with tab3:
-    filter_by = st.selectbox("Filter dataset by", [None] + val_loader.dataset.transformation_types)
-    batch, predictions, probs, lang = get_predictions_for_filter(path, filter_by)
-    idx = st.number_input("Problem in batch", min_value=0, max_value=len(batch["xq_context"])-1, value=0)
-    st.subheader(f"{batch['transformation'][idx]}-problem")
-    fig = analysis_utils.plot_token_predictions(idx, batch, predictions, probs, [lang.index2symbol[i] for i in range(lang.n_symbols)])
-    st.plotly_chart(fig)
-    st.subheader("Encoder Averaged Attention Activations")
-    enc_attn_fig = analysis_utils.get_encoder_attention_plot(model, batch, idx=idx, titles=False)
-    st.pyplot(enc_attn_fig, use_container_width=False)
+    st.header("Attention & Hidden State Analysis")
+    
+    val_loader = LetterStringDataLoader(
+        mode="val", 
+        data_dir="../data/letter-string-analogies/all_transformations_study1_copy_perm40", 
+        batch_size=10, 
+        batching_method="alphabet"
+    )
+    # 1. Setup Filter (Applying logic from your snippet)
+    alphabet_str = " ".join(list(string.ascii_lowercase))
+    filter_options = [None] + val_loader.dataset.transformation_types
+    filter_by = st.selectbox("Filter dataset by transformation", filter_options)
+
+    if filter_by:
+        # This matches your snippet: "transformation | a b c..."
+        filter_query = [" | ".join([filter_by, alphabet_str])]
+        val_loader.dataset.set_filter("transformation_alphabet", filter_query)
+    else:
+        val_loader.dataset.set_filter("random")
+
+    # 2. Get Batch & Index
+    # We use a fixed seed for reproducibility as per your snippet
+    random.seed(10) 
+    batch = next(iter(val_loader))
+    
+    # Selection UI
+    idx = st.number_input("Problem Index in Batch", min_value=0, max_value=len(batch["xq_context"])-1, value=0)
+    
+    # 3. Model Inference with Extractor
+    # Note: Ensure analysis_utils.Extractor is available
+    
+    extractor = Extractor(model)
+    extractor.register()
+
+    model.eval()
+    with torch.no_grad():
+        # Running the model triggers the hooks in the extractor
+        _ = model(batch["yq_io_padded"], batch)
+
+    # 4. Plotting
+    st.subheader("Task Description")
+    st.code(f'Alphabet: {batch["alphabet"][idx]}\nStudy: {batch["study"][idx]}\nProblem: {batch["problem"][idx]}')
+
+    st.subheader("Averaged Attention")
+    # Assuming these functions return a matplotlib figure or use plt.gcf()
+    fig_attn = analysis_utils.plot_averaged_attention(extractor, batch, idx, cbar=False)
+    if fig_attn:
+        st.pyplot(fig_attn)
+    else:
+        st.pyplot(plt.gcf()) # Fallback to current global figure
+
+    st.subheader("Hidden States")
+    fig_hidden = analysis_utils.plot_hidden_states(extractor, batch, idx, cbar=False)
+    if fig_hidden:
+        st.pyplot(fig_hidden)
+    else:
+        st.pyplot(plt.gcf())
+
+    # 5. Cleanup
+    extractor.clear()
+
+    # Optional: Keep your original token prediction plot at the bottom
+    st.divider()
+    st.subheader("Token Predictions")
+    # Re-running prediction for the probability chart
+    predictions, logits = evaluate.predict_batch(
+        batch, model, val_loader.dataset.langs,
+        max_length=val_loader.dataset.yq_max+5, return_logits=True
+    )
+    probs = torch.nn.functional.softmax(logits, dim=1)
+    lang = val_loader.dataset.langs["output"]
+    fig_tokens = analysis_utils.plot_token_predictions(
+        idx, batch, predictions, probs, [lang.index2symbol[i] for i in range(lang.n_symbols)]
+    )
+    st.plotly_chart(fig_tokens, use_container_width=True)
 
 
 def batch_single_task(alph, study_in, study_out, query, solution):
@@ -115,17 +197,18 @@ def batch_single_task(alph, study_in, study_out, query, solution):
 
 
 with tab4:
-    with st.form("Your task:"):
-        alph = st.text_input(label="Input alphabet", value=" ".join(list(string.ascii_lowercase)))
-        study_in = st.text_input(label="Study Example (in)", value="a b c")
-        study_out = st.text_input(label="Study Example (out)", value="a b d")
-        query = st.text_input(label="Query", value="i j")
-        solution = st.text_input(label="Solution", value="i k")
-        submitted = st.form_submit_button("Submit")
-        if submitted:
-            batch, ds = batch_single_task(alph, study_in, study_out, query, solution)
-            pred = evaluate.predict_batch(
-                batch, model, ds.langs, 
-                max_length=len(query.split(" ")*2), check_for_valid_length=False)
-            st.subheader("Model Prediction:")
-            st.text(" ".join(pred[0]))
+    ...
+    # with st.form("Your task:"):
+    #     alph = st.text_input(label="Input alphabet", value=" ".join(list(string.ascii_lowercase)))
+    #     study_in = st.text_input(label="Study Example (in)", value="a b c")
+    #     study_out = st.text_input(label="Study Example (out)", value="a b d")
+    #     query = st.text_input(label="Query", value="i j")
+    #     solution = st.text_input(label="Solution", value="i k")
+    #     submitted = st.form_submit_button("Submit")
+    #     if submitted:
+    #         batch, ds = batch_single_task(alph, study_in, study_out, query, solution)
+    #         pred = evaluate.predict_batch(
+    #             batch, model, ds.langs, 
+    #             max_length=len(query.split(" ")*2), check_for_valid_length=False)
+    #         st.subheader("Model Prediction:")
+    #         st.text(" ".join(pred[0]))

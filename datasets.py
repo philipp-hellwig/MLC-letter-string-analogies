@@ -1,6 +1,5 @@
 from collections import defaultdict
 from copy import copy
-import math
 import random
 import string
 
@@ -14,8 +13,8 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 SOS_token = "SOS" # start of sentence
 EOS_token = "EOS" # end of sentence
 PAD_token = "PAD" # padding symbol
-IO_SEP = 'IO' # separator '->' between input/outputs in support examples
-ITEM_SEP  = SOS_token # separator '|' between support examples in input sequence
+IO_SEP = 'IO' # separator '->' between input/outputs in study examples
+ITEM_SEP  = SOS_token # separator '|' between alphabet, study example(s) and query
 
 
 class Lang:
@@ -34,7 +33,7 @@ class Lang:
         self.IN_OUT_idx = n+3
         self.PAD_token = PAD_token
         
-    def symbols_to_tensor(self, symbols: list, add_eos=True) -> torch.LongTensor:
+    def symbols_to_tensor(self, symbols: list, add_eos=True):
         """Convert a list of token strings to a tensor of symbol indices. Adds EOS token at end by default
 
         Args:
@@ -51,7 +50,7 @@ class Lang:
         output = torch.tensor(indices, dtype=torch.int64)
         return output
 
-    def tensor_to_symbols(self, indices) -> list:
+    def tensor_to_symbols(self, indices, exclude_special_tokens=True) -> list:
         """Convert tensor of token index to token strings, breaking where we get a EOS token.
         The EOS token is not included at the end in the result string list.
 
@@ -68,7 +67,7 @@ class Lang:
         symbols = []
         for x in indices:
             s = self.index2symbol[x]
-            if s == EOS_token:
+            if s == EOS_token and exclude_special_tokens:
                 break
             symbols.append(s)
         return symbols
@@ -220,8 +219,8 @@ class LetterStringDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    def __getitem__(self, idx: int=None):
-        """Return letter-string problem by `idx`. If `idx` is not given, return a random problem instead."""
+    def __getitem__(self, idx: int):
+        """Return letter-string problem by `idx`."""
         return self.data[idx]
 
     def collate_fn(self, problems: list[dict]) -> defaultdict:
@@ -282,18 +281,3 @@ class LetterStringDataLoader(DataLoader):
             query_first
         )
         super().__init__(dataset=dataset, batch_sampler=dataset.sampler, collate_fn=dataset.collate_fn)
-
-
-if __name__ == "__main__":
-    # example for creating Dataset and DataLoader objects:
-    from torch.utils.data import DataLoader
-    D_val = LetterStringDataset(data_dir="data/no_pred", mode="val")
-    item = D_val.__getitem__()
-    print("Dataset item:")
-    print(item)
-
-    val_dataloader = DataLoader(D_val, batch_size=25, collate_fn=D_val.collate_fn)
-    batch = next(iter(val_dataloader))
-    print("\nDataloader batch:")
-    print(f"with keys: {list(batch.keys())}\n")
-    print(batch)
