@@ -40,27 +40,43 @@ def load_performance_results():
     df_pivot = df_pivot.sort_values(by=('New Transformations', 'New Alphabets'))
     return df_pivot
 
+
 def render_model_choice_page():
     st.header("Performance Comparison")
     df = load_performance_results()
     # Display the multi-index dataframe
     st.dataframe(df, use_container_width=True)
 
-    model_choice = st.segmented_control(
-        label="Select Model", 
-        options=["Noncopy (20 alphabets)", "Copy (20 alphabets)", "Copy (200 alphabets)"], 
-        default="Copy (200 alphabets)"
+    few_shot_choice = st.segmented_control(
+        label="Select Num. Study Examples", 
+        options=list(range(1, 6)), 
+        default=1
     )
-    if model_choice == "Noncopy (20 alphabets)":
-        model_path = "../../models/batching_experiments/MLC_batchrand_dallstudy1_nep20.pt"
-    elif model_choice == "Copy (20 alphabets)": 
-        model_path = "../../models/copy_batching_experiments/MLC_batchrand_dallstudy1_copy_perm20_nep20.pt"
-    elif model_choice == "Copy (200 alphabets)":
-        model_path = "../../models/num_permuted_alphabets/MLC_batchalph_dallstudy1_copy_perm200_nep20.pt" 
+
+    if few_shot_choice == 1:
+        replication = st.number_input("Replication Run", min_value=0, max_value=4, value=0)
+        model_choice = st.segmented_control(
+            label="Select Model", 
+            options=["Noncopy (20 alphabets)", "Copy (20 alphabets)", "Copy (200 alphabets)"], 
+            default="Copy (200 alphabets)"
+        )
+        rep = "" if replication == 0 else f"_rep{replication}"
+        if model_choice == "Noncopy (20 alphabets)":
+            model_path = f"../../models/batching_experiments/MLC_batchrand_dallstudy1_nep20{rep}.pt"
+        elif model_choice == "Copy (20 alphabets)": 
+            model_path = f"../../models/copy_batching_experiments/MLC_batchrand_dallstudy1_copy_perm20_nep20{rep}.pt"
+        elif model_choice == "Copy (200 alphabets)":
+            model_path = f"../../models/num_permuted_alphabets/MLC_batchalph_dallstudy1_copy_perm200_nep20{rep}.pt" 
+        else:
+            raise NotImplementedError(f"{model_choice} is not a valid choice.")  
+        # load constant variables across tabs
+        dl = utils.get_dataloader(path="../../data/letter-string-analogies/perturbation_dataset")
+        cp, model = utils.get_setup(model_path)
+    
     else:
-        raise NotImplementedError(f"{model_choice} is not a valid choice.")  
-    # load constant variables across tabs
-    dl = utils.get_dataloader(path="../../data/letter-string-analogies/perturbation_dataset")
-    cp, model = utils.get_setup(model_path)
+        model_path = f"../../models/study_examples/MLC_batchstudy_alph_dallstudy{few_shot_choice}_copy_perm20_nep20.pt"
+        dl = utils.get_dataloader(path=f"../../data/letter-string-analogies/all_transformations_study{few_shot_choice}_copy_perm20") 
+        cp, model = utils.get_setup(model_path)
+
 
     return cp, model, dl

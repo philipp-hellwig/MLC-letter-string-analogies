@@ -59,3 +59,4 @@ class Perturber:
                     src_key_padding_mask=src_padding_mask
                 )
             return self.model.transformer.encoder.norm(hidden_states)
+        

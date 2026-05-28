@@ -204,8 +204,8 @@ def plot_attention(attn_matrix, batch, idx, ax, **kwargs):
     ax.set_xticklabels(ax.get_xticklabels(), rotation=0, ha='center', fontsize=12)
     ax.set_yticklabels(ax.get_yticklabels(), rotation=-90, va='center', fontsize=12)
     ax.set_aspect('equal')
-    ax.set_xlabel("K", loc='right', labelpad=-4 if isinstance(idx, list) else 4)
-    ax.set_ylabel("Q", loc='top', labelpad=-4 if isinstance(idx, list) else 4)
+    ax.set_xlabel("source", loc='right', labelpad=-4 if isinstance(idx, list) else 4, fontsize=14)
+    ax.set_ylabel("destination", loc='top', labelpad=-4 if isinstance(idx, list) else 4, fontsize=14)
 
 
 def plot_averaged_attention(extractor, batch, idx, **kwargs):

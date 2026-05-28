@@ -1,10 +1,29 @@
-axes.titlesize : 18
-axes.labelsize : 14
+svg.fonttype : none
+
+font.family: sans-serif
+font.sans-serif: Calibri, Arial, Helvetica, DejaVu Sans, sans-serif
+
 axes.spines.top : False
 axes.spines.right : False
-xtick.labelsize : 12
-ytick.labelsize : 12
-
 legend.frameon : False
-legend.title_fontsize : 12
-legend.fontsize : 10
+
+axes.titlesize : 9
+axes.labelsize : 8
+
+xtick.labelsize : 7
+ytick.labelsize : 7
+
+legend.title_fontsize : 7
+legend.fontsize : 7
+
+lines.linewidth : .5
+lines.markersize : 4.0
+lines.markeredgewidth : 0.2
+
+axes.linewidth : 0.5
+xtick.major.width : 0.5
+ytick.major.width : 0.5
+xtick.minor.width : 0.5
+ytick.minor.width : 0.5
+xtick.major.size : 2
+ytick.major.size : 2

@@ -8,7 +8,7 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class DecoderLens:
     def __init__(self, model) -> None:
-        """Applies a decoder lens to an earlier attention layer of the 
+        """Applies the decoder lens to the outputs of an earlier attention layer of the MLC model.
 
         Args:
             model (MLC): _description_

@@ -112,7 +112,7 @@ class MLC(nn.Module):
         tgt_mask = tgt_mask.to(dtype=torch.bool, device=DEVICE)
         return tgt_embed, tgt_padding_mask, tgt_mask
 
-    def forward(self, z_padded, batch):
+    def forward(self, z_padded, batch, **kwargs):
         # Forward pass through encoder and decoder
         # 
         # Input

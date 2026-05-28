@@ -10,9 +10,9 @@ st.set_page_config(page_title="MLC Model Predictions", layout="wide")
 
 cp, model, dl = render_model_choice_page()
 
-tab1, tab2 = st.tabs(["Training", "Computational Graph"])
+tab1, tab2 = st.tabs(["Computational Graph", "Training"])
 with tab1:
-    render_training_page(cp)
+    render_computational_graph_page(dl, model)
 
 with tab2:
-    render_computational_graph_page(dl, model)
+    render_training_page(cp)

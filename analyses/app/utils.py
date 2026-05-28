@@ -23,7 +23,8 @@ def get_dataloader(path="../../data/letter-string-analogies/all_transformations_
     loader = LetterStringDataLoader(
         mode="test", 
         data_dir=path, 
-        batch_size=5, 
-        batching_method="alphabet"
+        batch_size=20, 
+        batching_method="alphabet",
+        shuffle=False
     )
     return loader

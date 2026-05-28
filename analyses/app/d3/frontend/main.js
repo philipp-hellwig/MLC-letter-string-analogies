@@ -115,7 +115,7 @@ function drawAblationToggle(parent, x, y) {
     toggleG.append("text")
         .attr("x", -10).attr("y", toggleHeight / 2)
         .attr("text-anchor", "end").attr("alignment-baseline", "middle")
-        .style("fill", "white").style("font-size", "14px").text("Perturbation Mode (only supports perturbations at hidden layer that connects to the decoder)");
+        .style("fill", "white").style("font-size", "18px").text("Ablation Mode (only supports perturbations at hidden layer that connects to the decoder)");
 
     const track = toggleG.append("rect")
         .attr("width", toggleWidth).attr("height", toggleHeight)
@@ -154,6 +154,8 @@ function drawAblationToggle(parent, x, y) {
 }
 
 function drawHeatmap(g, matrix, labels, cellSize, showYLabels, separators, sizeMode = "large") {
+    const totalHeight = matrix.length * cellSize;
+    const totalWidth = matrix[0].length * cellSize;
     const activeSeparators = separators || [];
     const flatValues = matrix.flat();
     const dynamicDomain = d3.extent(flatValues);
@@ -226,6 +228,25 @@ function drawHeatmap(g, matrix, labels, cellSize, showYLabels, separators, sizeM
             .attr("stroke-width", separatorWidth)
             .attr("stroke-dasharray", dashArray);
     });
+
+    // Y-axis Label: Destination
+    g.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -totalHeight / 2) // Centered vertically
+        .attr("y", - 3 * labelOffset) // Positioned to the left of the labels
+        .attr("text-anchor", "middle")
+        .style("fill", "#fafafa")
+        .style("font-size", `${labelFontSize * 1.2}px`)
+        .text("Destination");
+
+    // X-axis Label: Source
+    g.append("text")
+        .attr("x", totalWidth / 2)   // Centered horizontally
+        .attr("y", totalHeight + 3 * labelOffset) // Positioned below the token labels
+        .attr("text-anchor", "middle")
+        .style("fill", "#fafafa")
+        .style("font-size", `${labelFontSize * 1.2}px`)
+        .text("Source");
 }
 
 function drawHiddenState(g, matrix, labels, width, height, separators, layerIdx, deletedPoints = []) {
@@ -329,9 +350,27 @@ function drawNextTokenPredictions(g, labels, yOffset, xOffset, predictionData, c
         const yScale = d3.scaleLinear().domain([0, 1]).range([plotHeight, 0]);
         const xScale = d3.scaleBand().domain(topK.map(d => d.label)).range([0, plotWidth]).padding(0.2);
 
+        // For the Left Axis (Y-axis)
         if (i === 0) {
-            cellG.append("g").call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format(".1f")))
-                .selectAll("text").style("fill", "#888").style("font-size", "14px");
+            const yAxis = cellG.append("g")
+                .call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format(".1f")));
+
+            // Color the labels (which you already do)
+            yAxis.selectAll("text")
+                .style("fill", "#ffffff")
+                .style("font-size", "18px");
+            // Color the main vertical line and the small tick marks
+            yAxis.selectAll("path, line").style("stroke", "#ffffff");
+
+            // Add the Y-axis Label
+            yAxis.append("text")
+                .attr("transform", "rotate(-90)") // Rotate to run vertically
+                .attr("y", -50)                  // Move left of the axis ticks
+                .attr("x", -plotHeight / 2)      // Center it along the axis height
+                .attr("text-anchor", "middle")
+                .style("fill", "#ffffff")
+                .style("font-size", "20px")
+                .text("Probability");
         }
 
         cellG.selectAll(".bar").data(topK).enter().append("rect")
@@ -341,8 +380,20 @@ function drawNextTokenPredictions(g, labels, yOffset, xOffset, predictionData, c
             .on("mouseover", (event, d) => showTooltip(event, "Char", d.label, d.prob))
             .on("mouseout", hideTooltip);
 
-        cellG.append("g").attr("transform", `translate(0, ${plotHeight})`).call(d3.axisBottom(xScale))
-            .selectAll("text").style("fill", "#fafafa").style("font-size", "18px");
+        const xAxis = cellG.append("g")
+            .attr("transform", `translate(0, ${plotHeight})`)
+            .call(d3.axisBottom(xScale));
+
+        // Style the text labels
+        xAxis.selectAll("text")
+            .style("fill", "#fafafa")
+            .style("font-size", "18px");
+
+        // Style the lines and the domain path
+        xAxis.selectAll("path, line")
+            .style("stroke", "#ffffff");
+        
+        xAxis.select(".domain").style("stroke", "none");
 
         cellG.append("text").attr("x", plotWidth / 2).attr("y", -20).attr("text-anchor", "middle")
             .style("fill", "#FFA500").style("font-size", "20px").style("font-style", "italic").text(`Gen Token #${i+1}`);
@@ -399,6 +450,21 @@ function renderComputationalGraph(attentionWeights, hiddenStates, labels, separa
     
     const mainGroup = svg.append("g");
 
+    // 1. Define your default settings
+    const defaultScale = 0.75;      // 1 is 100%, 0.5 is 50%, etc.
+    const defaultTranslateX = 50;   // Move right by 50px
+    const defaultTranslateY = 20;   // Move down by 20px
+
+    // 2. Create the transform object
+    const initialTransform = d3.zoomIdentity
+        .translate(defaultTranslateX, defaultTranslateY)
+        .scale(defaultScale);
+    // 3. Apply it to the SVG immediately
+    svg.call(zoom.transform, initialTransform);
+
+    // Initial attachment of zoom (already in your code)
+    svg.call(zoom);
+    
     const defs = svg.append("defs");
     const addArrowhead = (id, color) => {
         defs.append("marker").attr("id", id).attr("viewBox", "0 -5 10 10").attr("refX", 9).attr("refY", 0)
@@ -481,7 +547,7 @@ function renderComputationalGraph(attentionWeights, hiddenStates, labels, separa
                     .style("fill", colors.textDim)
                     .style("font-size", "10px")
                     .style("font-weight", "bold")
-                    .text(`Head ${headIdx+1}`);
+                    .text(`Attn. Head ${headIdx+1}`);
 
                 // 2. Create a nested group for the heatmap to sit below the title
                 const heatmapArea = headGroup.append("g")

@@ -77,12 +77,13 @@ class BatchSampler(Sampler):
     """Creates a sampler that batches problems by the filter set by `batch_by` in `LetterStringDataset`. 
     E.g., if `batch_by=="transformation"` and `dataset.current_filter == "succ"`, the sampler will return a batch of only successor problems
     """
-    def __init__(self, dataset, batch_size: int, reshuffle: bool):
+    def __init__(self, dataset, batch_size: int, shuffle: bool, reshuffle: bool):
         self.dataset = dataset
         self.batch_size = batch_size
         self.reshuffle = reshuffle
         self.batches = None
         self.filter = dataset.filter
+        self.shuffle = shuffle
 
     def __iter__(self):
         if (self.reshuffle 
@@ -96,11 +97,13 @@ class BatchSampler(Sampler):
                 indices = self.dataset.filter[f]
                 indices = indices.copy()
                 # shuffle ids within each batch:
-                random.shuffle(indices)
+                if self.shuffle:
+                    random.shuffle(indices)
                 for i in range(0, len(indices), self.batch_size):
                     self.batches.append(indices[i:i+self.batch_size])
-            # shuffle order of batches:
-            random.shuffle(self.batches)
+            if self.shuffle:
+                # shuffle order of batches:
+                random.shuffle(self.batches)
         
         for batch in self.batches:
             yield batch
@@ -132,7 +135,8 @@ class LetterStringDataset(Dataset):
             alphabet: list=list(string.ascii_lowercase), 
             batch_size: int=25,
             batching_method: str="random", 
-            query_first: bool=False
+            query_first: bool=False,
+            shuffle: bool=True
         ):
         assert mode in ['train','val','test']        
         self.mode = mode
@@ -177,7 +181,7 @@ class LetterStringDataset(Dataset):
         
         # initialize sampling method for obtaining batches from the dataset:
         self.set_filter(batching_method)
-        self.sampler = BatchSampler(self, batch_size=batch_size, reshuffle=self.train)
+        self.sampler = BatchSampler(self, batch_size=batch_size, shuffle=shuffle, reshuffle=self.train)
 
     def set_filter(self, batching_method: str, include=None):
         match batching_method:
@@ -192,9 +196,10 @@ class LetterStringDataset(Dataset):
                         self.filter[example["transformation"]].append(i)
             case "alphabet":
                 # accumulate example ids by alphabet:
-                self.filter = {alph: [] for alph in self.unique_alphabets}
+                self.filter = {alph: [] for alph in self.unique_alphabets if not include or alph in include}
                 for i, example in enumerate(self.data):
-                    self.filter[example["alphabet"]].append(i)
+                    if not include or example["alphabet"] in include:
+                        self.filter[example["alphabet"]].append(i)
             case "transformation_alphabet":
                 # accumulate example ids by transformation type and alphabet:
                 if include is None:
@@ -270,7 +275,8 @@ class LetterStringDataLoader(DataLoader):
         alphabet: list=list(string.ascii_lowercase), 
         batch_size: int=25,
         batching_method: str="random", 
-        query_first: bool=False
+        query_first: bool=False,
+        shuffle: bool = True
         ):
         dataset = LetterStringDataset(
             mode,
@@ -278,6 +284,7 @@ class LetterStringDataLoader(DataLoader):
             alphabet,
             batch_size,
             batching_method,
-            query_first
+            query_first,
+            shuffle=shuffle
         )
         super().__init__(dataset=dataset, batch_sampler=dataset.sampler, collate_fn=dataset.collate_fn)
