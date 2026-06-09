@@ -1,0 +1,21 @@
+filename_model,batching_method,num. seen alphabets in training,seen transform.,new transform.,alphabets
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched.pt,alphabet,20,0.587,0.099,seen
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched.pt,alphabet,20,0.2773095881698203,0.03383964622188041,new
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched_rep1.pt,alphabet,20,0.553,0.116,seen
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched_rep1.pt,alphabet,20,0.27778661154396567,0.04460680638338781,new
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched_rep2.pt,alphabet,20,0.561,0.098,seen
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched_rep2.pt,alphabet,20,0.278263634918111,0.029994231878484906,new
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched_rep3.pt,alphabet,20,0.556,0.093,seen
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched_rep3.pt,alphabet,20,0.27905867387501987,0.03537781195923861,new
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched_rep4.pt,alphabet,20,0.556,0.103,seen
+MLC_batchbyalph_dallstudy1_perm20_nep20_matched_rep4.pt,alphabet,20,0.28001272062331056,0.03864641415112478,new
+MLC_batchrand_dallstudy1_perm20_nep20_matched.pt,random,20,0.63,0.11,seen
+MLC_batchrand_dallstudy1_perm20_nep20_matched.pt,random,20,0.2572746064557163,0.04229955777735051,new
+MLC_batchrand_dallstudy1_perm20_nep20_matched_rep1.pt,random,20,0.542,0.069,seen
+MLC_batchrand_dallstudy1_perm20_nep20_matched_rep1.pt,random,20,0.27142629988869454,0.024226110363391656,new
+MLC_batchrand_dallstudy1_perm20_nep20_matched_rep2.pt,random,20,0.61,0.079,seen
+MLC_batchrand_dallstudy1_perm20_nep20_matched_rep2.pt,random,20,0.26458896485927813,0.026533358969428957,new
+MLC_batchrand_dallstudy1_perm20_nep20_matched_rep3.pt,random,20,0.551,0.064,seen
+MLC_batchrand_dallstudy1_perm20_nep20_matched_rep3.pt,random,20,0.2741294323421848,0.021149778888675256,new
+MLC_batchrand_dallstudy1_perm20_nep20_matched_rep4.pt,random,20,0.93,0.149,seen
+MLC_batchrand_dallstudy1_perm20_nep20_matched_rep4.pt,random,20,0.3191286373032279,0.048836762161122864,new
