@@ -2,6 +2,8 @@ analyses/older_analyses
 analyses/app/d3/frontend/node_modules
 data/letter-string-analogies/
 data/1D-ARC
+data
+train.prof
 figures
 models/larger_dataset
 models/n_study

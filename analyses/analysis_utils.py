@@ -48,6 +48,7 @@ def predict_dataset(
         col_data = []
         for batch in data_with_pred:
             col_data += batch[col]
+        col_data = [x.cpu() if isinstance(x, torch.Tensor) else x for x in col_data]
         pred_data[col] = col_data
     pred_data["correct"] = pred_data["yq"] == pred_data["pred"]
 
@@ -92,7 +93,7 @@ def training_history(checkpoint, val_loader, description="Training information:"
     val_acc = pd.DataFrame(checkpoint.val_acc_hist)
     val_acc = pd.melt(val_acc, id_vars=['epoch'], value_vars=["in", "out-of", "overall"], var_name="distribution", value_name="accuracy")
     if not figs_only:
-        print(f"Best Validation Accuracy: {val_acc.loc[val_acc["distribution"] =="overall","accuracy"].max():.3f}")
+        print(f"Best Validation Accuracy: {val_acc.loc[val_acc['distribution'] =='overall','accuracy'].max():.3f}")
     _ = sns.lineplot(val_acc[val_acc.distribution == "overall"], x="epoch", y="accuracy", color="black", ax=ax2[0])
     _ = ax2[0].set_title("Overall Accuracy")
     _ = sns.lineplot(val_acc[val_acc.distribution != "overall"], x="epoch", y="accuracy", style="distribution", ax=ax2[1])
@@ -591,7 +592,7 @@ def plot_token_predictions(idx: int, batch, predictions, probs, symbols):
     ), row=2, col=1)
 
     fig.add_annotation(
-    text=f"Prediction outcome: {outcome}, correct answer: {' '.join(batch["yq"][idx])}",
+    text=f"Prediction outcome: {outcome}, correct answer: {' '.join(batch['yq'][idx])}",
     xref="paper", yref="paper",
     x=0.5, y=0, showarrow=False,
     font=dict(size=16)
