@@ -54,17 +54,22 @@ def render_model_choice_page():
     )
 
     if few_shot_choice == 1:
-        replication = st.number_input("Replication Run", min_value=0, max_value=4, value=0)
         model_choice = st.segmented_control(
             label="Select Model", 
             options=["Noncopy (20 alphabets)", "Copy (20 alphabets)", "Copy (200 alphabets)"], 
             default="Copy (200 alphabets)"
         )
+        batching_method = st.segmented_control(
+                    label="Select Batching method", 
+                    options=["rand", "alph", "bytrans", "byboth"], 
+                    default="rand"
+                )
+        replication = st.number_input("Replication Run", min_value=0, max_value=4, value=0)
         rep = "" if replication == 0 else f"_rep{replication}"
         if model_choice == "Noncopy (20 alphabets)":
-            model_path = f"../../models/batching_experiments/MLC_batchrand_dallstudy1_nep20{rep}.pt"
+            model_path = f"../../models/nocopy_matched_size/MLC_batch{batching_method}_dallstudy1_perm20_nep20_matched{rep}.pt"
         elif model_choice == "Copy (20 alphabets)": 
-            model_path = f"../../models/copy_batching_experiments/MLC_batchrand_dallstudy1_copy_perm20_nep20{rep}.pt"
+            model_path = f"../../models/copy_batching_experiments/MLC_batch{batching_method}_dallstudy1_copy_perm20_nep20{rep}.pt"
         elif model_choice == "Copy (200 alphabets)":
             model_path = f"../../models/num_permuted_alphabets/MLC_batchalph_dallstudy1_copy_perm200_nep20{rep}.pt" 
         else:

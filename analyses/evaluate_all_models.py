@@ -5,8 +5,6 @@ from pathlib import Path
 import re
 import sys
 
-import seaborn as sns
-import matplotlib.pyplot as plt
 import analysis_utils
 import pandas as pd
 import numpy as np
@@ -17,7 +15,7 @@ sys.path.append("../")
 
 from checkpoint import CheckPoint
 from datasets import LetterStringDataLoader
-import generate_data
+
 
 def main():
     experiment_folders = ["nocopy_matched_size", "copy_batching_experiments", "num_permuted_alphabets"]
@@ -45,7 +43,7 @@ def main():
         "filename", "copy", "batching method", "num. seen alphabets in training", "seen_transform.", "new_transform", "alphabets"
     ])
 
-    # TODO: load new alphabets eval dataset
+    # load new alphabets eval dataset
     test_new_alph = LetterStringDataLoader(
         mode="test", 
         data_dir="../data/all_transformations_study1_new_alphabets",

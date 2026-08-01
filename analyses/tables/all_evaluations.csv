@@ -1,4 +1,4 @@
-filename,copy,batching method,num. seen alphabets in training,seen_transform.,new_transform,alphabets
+filename,copy,batching method,num. seen alphabets in training,seen_transform,new_transform,alphabets
 MLC_batchrand_dallstudy1_perm20_nep20_matched.pt,False,random,20,0.63,0.11,seen
 MLC_batchrand_dallstudy1_perm20_nep20_matched.pt,False,random,20,0.2574336142470981,0.042107287060180736,new
 MLC_batchbyboth_dallstudy1_perm20_nep20_matched_rep4.pt,False,transformation_alphabet,20,0.614,0.103,seen
