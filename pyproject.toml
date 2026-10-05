@@ -1,0 +1,24 @@
+[project]
+name = "mlc-letter-string"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.1",
+    "nltk>=3.10.3",
+    "numpy>=2.5.2",
+    "pandas>=3.0.5",
+    "plotly>=7.0.0",
+    "seaborn>=0.13.2",
+    "statsmodels>=0.15.0",
+    "streamlit>=1.63.0",
+    "torch>=2.14.0",
+    "tqdm>=4.70.0",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+    "jupyter>=1.1.1",
+]

@@ -16,3 +16,4 @@ batching.ipynb
 Supplementary_Information.pdf
 .vscode
 jobs
+.venv/*
